@@ -87,6 +87,8 @@ export class Smurf extends Entity {
   private wanderTimeout = 0
   /** Задержка внутри дома при дневном визите. */
   private hideTimer = 0
+  /** Неудачные попытки зайти в дверь подряд. */
+  private enterAttempts = 0
 
   onSay: ((text: string) => void) | null = null
   onGone: (() => void) | null = null
@@ -157,7 +159,7 @@ export class Smurf extends Entity {
               this.doorOpened = true
             }
             this.state = 'entering'
-            this.enterTimer = 1.6
+            this.enterTimer = 4
             this.target.set(this.inside.x + 0.5, this.inside.y, this.inside.z + 0.5)
           } else {
             // Дома без двери: внутрь не попасть, дрожим на крылечке.
@@ -166,11 +168,14 @@ export class Smurf extends Entity {
         }
         break
 
-      case 'entering':
-        this.walkTo(dt, VILLAGE.smurfSpeed * 1.4)
+      case 'entering': {
+        this.walkTo(dt, VILLAGE.smurfSpeed * 1.4, true)
         this.enterTimer -= dt
-        if (this.horizontalDistanceTo(this.target) < 0.7 || this.enterTimer <= 0) {
+        const arrived = this.horizontalDistanceTo(this.target) < 0.8
+
+        if (arrived) {
           this.state = 'hiding'
+          this.enterAttempts = 0
           // Дневной визит короткий; ночью сидим до рассвета (таймер не мешает:
           // выход всё равно требует «не ночь и не страшно»).
           this.hideTimer = 2.4
@@ -180,8 +185,24 @@ export class Smurf extends Entity {
             ctx.setDoor(this.door.x, this.door.y, this.door.z, false)
             this.doorOpened = false
           }
+        } else if (this.enterTimer <= 0) {
+          // Не зашли — пробуем заново с крылечка. Раньше здесь было «спрятаться»,
+          // и смурфик замирал столбиком снаружи у стены — это и видел игрок.
+          this.enterAttempts++
+          if (this.enterAttempts < 4) {
+            this.startHome(false)
+          } else {
+            // Совсем не выходит (дверь замурована?) — хотя бы не бросаем дверь открытой.
+            if (this.door !== null && this.doorOpened) {
+              ctx.setDoor(this.door.x, this.door.y, this.door.z, false)
+              this.doorOpened = false
+            }
+            this.state = 'hiding'
+            this.hideTimer = 4
+          }
         }
         break
+      }
 
       case 'hiding':
         this.velocity.x = 0
@@ -200,7 +221,7 @@ export class Smurf extends Entity {
         break
 
       case 'exiting':
-        this.walkTo(dt, VILLAGE.smurfSpeed)
+        this.walkTo(dt, VILLAGE.smurfSpeed, true)
         if (this.horizontalDistanceTo(this.target) < 1.0) {
           if (this.door !== null && this.doorOpened) {
             ctx.setDoor(this.door.x, this.door.y, this.door.z, false)
@@ -232,7 +253,10 @@ export class Smurf extends Entity {
     this.state = 'fleeing'
     this.doorOpened = false
     this.target.copy(this.home)
-    if (cry) this.onSay?.(pick(NIGHT_CRIES))
+    if (cry) {
+      this.enterAttempts = 0
+      this.onSay?.(pick(NIGHT_CRIES))
+    }
   }
 
   /**
@@ -283,7 +307,11 @@ export class Smurf extends Entity {
     this.walkTo(dt, VILLAGE.smurfSpeed)
   }
 
-  private walkTo(dt: number, speed: number): void {
+  /**
+   * @param direct без детектора застревания и обходов — для коротких точных путей
+   * через дверной проём, где манёвр «свернуть вбок» только уводит с курса.
+   */
+  private walkTo(dt: number, speed: number, direct = false): void {
     let dx = this.target.x - this.position.x
     let dz = this.target.z - this.position.z
     const length = Math.hypot(dx, dz)
@@ -293,8 +321,10 @@ export class Smurf extends Entity {
       return
     }
 
-    this.updateNav(dt, length)
-    ;[dx, dz] = this.steer(dx, dz)
+    if (!direct) {
+      this.updateNav(dt, length)
+      ;[dx, dz] = this.steer(dx, dz)
+    }
 
     this.velocity.x = (dx / length) * speed
     this.velocity.z = (dz / length) * speed

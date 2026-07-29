@@ -169,7 +169,10 @@ export class Interaction {
       if (waterHit !== null && isWater(waterHit.id)) {
         this.breakCooldown = PLAYER.blockBreakCooldown
         this.world.setVoxel(waterHit.x, waterHit.y, waterHit.z, Block.Air)
-        this.add(Block.Water)
+        // В ведро идёт только источник. Растёкшаяся вода — производная от источника:
+        // давать за неё заряд значило бы бесконечно копировать воду, а так ЛКМ по ней —
+        // просто способ подсушить лужу.
+        if (waterHit.id === Block.Water) this.add(Block.Water)
         this.onScooped?.()
         this.onBlockChanged?.(waterHit.x, waterHit.y, waterHit.z, waterHit.id, Block.Air)
         return

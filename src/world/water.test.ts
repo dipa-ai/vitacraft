@@ -61,16 +61,57 @@ describe('WaterSim', () => {
     expect(world.getVoxel(4, 1, 0)).toBe(Block.Air)
   })
 
-  it('вниз течёт без потери уровня и заполняет колодец', () => {
-    // Колодец: столб пустоты с y=1 до y=5, источник наверху. Пол y=0.
-    const { world } = makeWorld({ '0,5,0': Block.Water })
+  it('вниз вода перемещается, а не копируется: объём сохраняется', () => {
+    // Колодец 1×1 со стенами: источник наверху, пустота до пола y=0.
+    const cells: Record<string, Block> = { '0,5,0': Block.Water }
+    for (let y = 1; y <= 5; y++) {
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        cells[`${dx},${y},${dz}`] = Block.Stone
+      }
+    }
+    const { world, map } = makeWorld(cells)
     const sim = new WaterSim()
     sim.wake(world, 0, 5, 0)
     settle(sim, world)
 
-    for (let y = 1; y <= 5; y++) {
-      expect(waterLevel(world.getVoxel(0, y, 0))).toBe(4)
-    }
+    // Источник утёк на дно, наверху пусто, воды осталось ровно одна клетка.
+    expect(waterLevel(world.getVoxel(0, 1, 0))).toBe(4)
+    expect(world.getVoxel(0, 5, 0)).toBe(Block.Air)
+    expect(countWater(map)).toBe(1)
+  })
+
+  it('разбитый блок под источником: вода утекает вниз и не остаётся сверху', () => {
+    // Источник стоит на блоке, под блоком пустота до пола.
+    const { world } = makeWorld({ '0,3,0': Block.Water, '0,2,0': Block.Stone })
+    const sim = new WaterSim()
+    sim.wake(world, 0, 3, 0)
+    settle(sim, world)
+    expect(waterLevel(world.getVoxel(0, 3, 0))).toBe(4)
+
+    // Ломаем опору — источник должен провалиться на пол, а не размножиться.
+    world.setFluid(0, 2, 0, Block.Air)
+    sim.wake(world, 0, 2, 0)
+    settle(sim, world)
+
+    expect(waterLevel(world.getVoxel(0, 1, 0))).toBe(4)
+    expect(world.getVoxel(0, 3, 0)).toBe(Block.Air)
+    expect(world.getVoxel(0, 2, 0)).toBe(Block.Air)
+  })
+
+  it('вычерпанный источник осушает всю растёкшуюся воду', () => {
+    const { world, map } = makeWorld({ '0,1,0': Block.Water })
+    const sim = new WaterSim()
+    sim.wake(world, 0, 1, 0)
+    settle(sim, world)
+    expect(countWater(map)).toBeGreaterThan(1)
+
+    // Черпаем источник ведром.
+    world.setFluid(0, 1, 0, Block.Air)
+    sim.wake(world, 0, 1, 0)
+    settle(sim, world)
+
+    // Без подпитки растёкшаяся вода высохла вся.
+    expect(countWater(map)).toBe(0)
   })
 
   it('в замкнутом бассейне вода остаётся и не исчезает', () => {

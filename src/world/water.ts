@@ -4,16 +4,22 @@ import { Block, isWater, waterByLevel, waterLevel } from './blocks'
 /**
  * Симуляция воды.
  *
- * Правила намеренно простые: вниз вода течёт без потери уровня, по горизонтали — с
- * потерей (4 → 3 → 2 → 1), поэтому налитый пруд ограничивает себя сам, а не заливает
- * весь мир по одной высоте. Если под клеткой пусто, вбок она не растекается — сначала
- * падает. Обратного «высыхания» нет: для этой игры важно, чтобы вода вела себя
- * предсказуемо, а не реалистично.
+ * Вода двух сортов: ИСТОЧНИК (полный уровень, только из террагена и ведра) и
+ * РАСТЁКШАЯСЯ (уровни 3…1), которую источник порождает вокруг себя.
  *
- * Работает очередью активных клеток с бюджетом на тик (по образцу очереди перестройки
- * мешей в World): вода течёт спокойно и не съедает кадр. Все изменения идут с
- * recordEdit=false — вода не пишется в сохранение, иначе дифф распух бы на порядок,
- * а после загрузки она всё равно стечёт заново из источников.
+ * Три правила, дающие управляемую воду:
+ *
+ * 1. Вниз вода ПЕРЕМЕЩАЕТСЯ, а не копируется: разбил блок под водой — она утекла
+ *    туда, наверху пусто. Никакого бесплатного удвоения.
+ * 2. По горизонтали источник растекается с потерей уровня (4 → 3 → 2 → 1), поэтому
+ *    пруд ограничивает себя сам.
+ * 3. Растёкшаяся вода живёт только пока её кто-то подпитывает — сосед уровнем выше
+ *    или вода сверху. Вычерпал источник — всё растёкшееся высыхает само. Затопленный
+ *    дом лечится ведром, а не сносом.
+ *
+ * Работает очередью активных клеток с бюджетом на тик. Все изменения идут с
+ * recordEdit=false — вода не пишется в сохранение, после загрузки она стечёт заново
+ * из источников.
  */
 
 /** Всё, что нужно симуляции от мира. Узкий интерфейс — тесты подсовывают Map. */
@@ -93,19 +99,30 @@ export class WaterSim {
     if (!isWater(id)) return
     const level = waterLevel(id)
 
-    // Вниз — без потери уровня. Пока внизу пусто, вбок не растекаемся.
+    // 1. Вниз — перемещением, а не копией: объём сохраняется, вода «утекает».
     if (y > 0) {
       const below = world.getVoxel(x, y - 1, z)
       if (below === Block.Air || (isWater(below) && waterLevel(below) < level)) {
         world.setFluid(x, y - 1, z, id)
+        world.setFluid(x, y, z, Block.Air)
         this.enqueue(x, y - 1, z)
-        // Источник остаётся активным: колонна воды заполняет яму до дна.
-        this.enqueue(x, y, z)
+        this.wakeWaterAround(world, x, y, z)
         return
       }
     }
 
-    // По горизонтали — с потерей уровня, пока есть что терять.
+    // 2. Высыхание: растёкшаяся вода без подпитки исчезает. Источник не сохнет никогда.
+    if (level < 4) {
+      const support = this.supportFor(world, x, y, z)
+      if (level > support) {
+        world.setFluid(x, y, z, waterByLevel(support))
+        this.wakeWaterAround(world, x, y, z)
+        if (support > 0) this.enqueue(x, y, z)
+        return
+      }
+    }
+
+    // 3. По горизонтали — с потерей уровня, пока есть что терять.
     if (level <= 1) return
     const spreadId = waterByLevel(level - 1)
     for (const [dx, dz] of DIRS) {
@@ -117,5 +134,24 @@ export class WaterSim {
         this.enqueue(nx, y, nz)
       }
     }
+  }
+
+  /** Чем клетку подпитывают соседи: вода сверху или сосед уровнем выше сбоку. */
+  private supportFor(world: WaterWorld, x: number, y: number, z: number): number {
+    let support = isWater(world.getVoxel(x, y + 1, z)) ? 3 : 0
+    for (const [dx, dz] of DIRS) {
+      support = Math.max(support, waterLevel(world.getVoxel(x + dx, y, z + dz)) - 1)
+    }
+    return support
+  }
+
+  /** Будит водных соседей клетки — после перемещения или высыхания они пересчитываются. */
+  private wakeWaterAround(world: WaterWorld, x: number, y: number, z: number): void {
+    this.wakeIfWater(world, x + 1, y, z)
+    this.wakeIfWater(world, x - 1, y, z)
+    this.wakeIfWater(world, x, y, z + 1)
+    this.wakeIfWater(world, x, y, z - 1)
+    this.wakeIfWater(world, x, y + 1, z)
+    this.wakeIfWater(world, x, y - 1, z)
   }
 }
