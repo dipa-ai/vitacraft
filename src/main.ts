@@ -13,6 +13,7 @@ import { DoorVisuals } from './render/doors'
 import { Fx } from './render/fx'
 import { createPlayerModel } from './render/models'
 import { SceneRig } from './render/scene'
+import { Viewmodel } from './render/viewmodel'
 import {
   clearSave,
   loadGame,
@@ -80,6 +81,7 @@ class Game {
   private readonly village: Village
   private readonly combat: Combat
   private readonly doors: DoorVisuals
+  private readonly viewmodel: Viewmodel
   private readonly fauna: Fauna
   private readonly night: NightManager
   private saveTimer = 0
@@ -121,6 +123,7 @@ class Game {
     this.village = new Village(this.world, this.rig.scene, this.player, this.fx)
     this.combat = new Combat(this.world, this.rig.scene, this.player, this.fx)
     this.doors = new DoorVisuals(this.rig.scene, this.world)
+    this.viewmodel = new Viewmodel(this.rig.camera)
     this.fauna = new Fauna(this.world, this.rig.scene)
     this.night = new NightManager(this.world, this.rig.scene, this.fx)
 
@@ -174,6 +177,7 @@ class Game {
       })
       this.village.handleBlockPlaced(x, y, z, block)
       this.audio.placeBlock()
+      this.viewmodel.placeBump()
     }
     this.interact.onBroken = (x, y, z, block) => {
       const def = blockDef(block)
@@ -261,8 +265,14 @@ class Game {
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }
-    this.interact.onScooped = () => this.audio.placeBlock()
-    this.interact.onDoorToggled = () => this.audio.placeBlock()
+    this.interact.onScooped = () => {
+      this.audio.placeBlock()
+      this.viewmodel.placeBump()
+    }
+    this.interact.onDoorToggled = () => {
+      this.audio.placeBlock()
+      this.viewmodel.placeBump()
+    }
     // Единая точка правды для дверных мешей: любое изменение блока может создать,
     // убрать или переключить дверь.
     this.interact.onBlockChanged = (x, y, z) => this.doors.onBlockChanged(x, y, z)
@@ -569,6 +579,15 @@ class Game {
 
     this.updatePlayerModel(dt)
     this.updateCamera()
+
+    this.viewmodel.setItem(this.interact.activeBlock)
+    this.viewmodel.update(
+      dt,
+      this.elapsed,
+      Math.hypot(this.player.velocity.x, this.player.velocity.z),
+      this.controls.attackHeld,
+      this.controls.cameraMode === 'first',
+    )
 
     this.rig.setTimeOfDay(this.dayFraction())
     this.rig.follow(this.player.position)
