@@ -324,19 +324,21 @@ export function isBed(id: Block): boolean {
  * Морковка и облачко не ставятся — это предметы «в руке».
  */
 export const HOTBAR_BLOCKS: readonly Block[] = [
+  // Первые девять — под цифрами: всё нужное для квестов должно быть в один тап.
   Block.BedHead,
   Block.DoorClosed,
   Block.Water,
+  Block.Carrot,
   Block.Pink,
   Block.Blue,
   Block.Yellow,
-  Block.Lavender,
-  Block.Mint,
   Block.Glass,
   Block.Wood,
+  // Дальше — только колесом.
   Block.Stone,
+  Block.Lavender,
+  Block.Mint,
   Block.Lantern,
-  Block.Carrot,
   Block.Cloud,
 ]
 

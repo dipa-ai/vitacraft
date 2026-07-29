@@ -250,6 +250,12 @@ class Game {
       this.showItemLabel()
     }
     this.controls.onCycleSlot = (direction) => {
+      // Открыта панель ресурсов — колесо листает её, а не слоты: в захваченном
+      // курсоре это единственный способ добраться до нижних строк.
+      if (this.hud.resourcesOpen) {
+        this.hud.scrollResources(direction * 110)
+        return
+      }
       this.interact.cycleSlot(direction)
       this.showItemLabel()
     }

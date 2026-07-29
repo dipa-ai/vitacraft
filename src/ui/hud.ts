@@ -68,6 +68,15 @@ export class Hud {
     return visible
   }
 
+  get resourcesOpen(): boolean {
+    return this.resourcesEl.classList.contains('show')
+  }
+
+  /** Прокрутка панели ресурсов колесом: в pointer lock скроллбар мышью не ухватить. */
+  scrollResources(delta: number): void {
+    this.resourcesEl.scrollTop += delta
+  }
+
   /**
    * Подпись выбранного предмета над хотбаром. В pointer lock курсора нет, тултипы
    * не работают — это единственный способ объяснить, что сейчас в руке.
