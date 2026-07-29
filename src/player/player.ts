@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { PLAYER } from '../config/tuning'
-import { Block } from '../world/blocks'
+import { isWater, type Block } from '../world/blocks'
 
 /**
  * Всё, что физике игрока нужно от мира. World удовлетворяет этому интерфейсу структурно,
@@ -60,12 +60,20 @@ export class Player {
   invulnerable = 0
   dead = false
 
+  /** Сколько прошло с последнего урона — от этого зависит регенерация. */
+  private sinceDamage = Infinity
+  private regenAccumulator = 0
+  /** Зовётся при восстановлении сердечка — HUD может отреагировать. */
+  onRegen: (() => void) | null = null
+
   respawn(x: number, y: number, z: number): void {
     this.position.set(x, y, z)
     this.velocity.set(0, 0, 0)
     this.health = PLAYER.maxHealth
     this.invulnerable = 0
     this.dead = false
+    this.sinceDamage = Infinity
+    this.regenAccumulator = 0
   }
 
   /** Позиция глаз — она же позиция камеры в первом лице. */
@@ -98,22 +106,38 @@ export class Player {
     if (this.dead || this.invulnerable > 0) return false
     this.health = Math.max(0, this.health - amount)
     this.invulnerable = PLAYER.invulnerable
+    this.sinceDamage = 0
+    this.regenAccumulator = 0
     if (this.health === 0) this.dead = true
     return true
   }
 
   update(dt: number, input: MoveInput, world: CollisionSource): void {
     if (this.invulnerable > 0) this.invulnerable = Math.max(0, this.invulnerable - dt)
+    this.regenerate(dt)
 
     // Плаваем, когда в воде середина тела, а не только ступни: иначе на мелководье
     // игрок то плывёт, то идёт.
-    this.inWater =
-      world.getVoxel(this.position.x, this.position.y + PLAYER.height * 0.5, this.position.z) ===
-      Block.Water
+    this.inWater = isWater(
+      world.getVoxel(this.position.x, this.position.y + PLAYER.height * 0.5, this.position.z),
+    )
 
     this.applyMovement(dt, input)
     this.integrate(dt, world)
     this.onGround = this.probeGround(world)
+  }
+
+  /** Сердечки восстанавливаются сами — но не сразу после удара, чтобы бой оставался боем. */
+  private regenerate(dt: number): void {
+    if (this.dead || this.health >= PLAYER.maxHealth) return
+    this.sinceDamage += dt
+    if (this.sinceDamage < PLAYER.regenDelay) return
+    this.regenAccumulator += dt
+    if (this.regenAccumulator >= PLAYER.regenInterval) {
+      this.regenAccumulator -= PLAYER.regenInterval
+      this.health = Math.min(PLAYER.maxHealth, this.health + 1)
+      this.onRegen?.()
+    }
   }
 
   private applyMovement(dt: number, input: MoveInput): void {

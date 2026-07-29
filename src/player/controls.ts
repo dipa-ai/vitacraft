@@ -23,6 +23,7 @@ export class Controls {
   onCycleSlot: ((direction: number) => void) | null = null
   onCameraToggle: ((mode: CameraMode) => void) | null = null
   onUnlock: (() => void) | null = null
+  onToggleResources: (() => void) | null = null
 
   private readonly keys = new Set<string>()
 
@@ -85,6 +86,13 @@ export class Controls {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    // Tab уводит фокус с канваса — без preventDefault панель ресурсов ломала бы ввод.
+    if (event.code === 'Tab') {
+      event.preventDefault()
+      if (!event.repeat) this.onToggleResources?.()
+      return
+    }
+
     // F5 в браузере перезагружает страницу — без preventDefault смена вида убивала бы игру.
     if (event.code === 'F5' || event.code === 'KeyV') {
       event.preventDefault()

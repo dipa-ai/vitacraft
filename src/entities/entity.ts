@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { isWater } from '../world/blocks'
 import type { CharacterModel } from '../render/models'
 import type { CollisionSource } from '../player/player'
 
@@ -46,8 +47,23 @@ export abstract class Entity {
     return true
   }
 
+  /** Существо в воде (по середине тела). */
+  protected inWater = false
+
   /** Гравитация и опора. Возвращает true, если существо только что коснулось земли. */
   protected applyGravity(dt: number, world: CollisionSource): boolean {
+    // В воде существа всплывают и плывут поверху: смурфик, утонувший по дороге через
+    // озеро и застрявший у подводного склона, — ровно тот баг, ради которого это здесь.
+    this.inWater = isWater(
+      world.getVoxel(this.position.x, this.position.y + this.height * 0.5, this.position.z),
+    )
+    if (this.inWater) {
+      this.velocity.y = Math.min(this.velocity.y + 30 * dt, 2.2)
+      this.position.y += this.velocity.y * dt
+      this.onGround = false
+      return false
+    }
+
     this.velocity.y -= GRAVITY * dt
     this.position.y += this.velocity.y * dt
 
@@ -85,6 +101,15 @@ export abstract class Entity {
    * Источник движения — именно velocity: от неё же зависит скорость анимации шага.
    */
   protected stepMove(world: CollisionSource, dt: number): void {
+    // Анти-застревание: существо, оказавшееся внутри твёрдого блока (спавн в стволе
+    // дерева, осевший на него блок), мягко выталкивается вверх — иначе оно навсегда
+    // заблокировано и никакой обход не поможет.
+    if (this.blockedAt(world, this.position.x, this.position.y, this.position.z)) {
+      this.position.y += 4 * dt
+      this.velocity.y = 0
+      return
+    }
+
     this.tryMove(world, this.velocity.x * dt, 0)
     this.tryMove(world, 0, this.velocity.z * dt)
   }
@@ -100,8 +125,8 @@ export abstract class Entity {
       return false
     }
 
-    // Препятствие в один блок — переступаем через него.
-    if (this.onGround && !this.blockedAt(world, nextX, this.position.y + 1, nextZ)) {
+    // Препятствие в один блок — переступаем. Из воды тоже: выход на берег это шаг вверх.
+    if ((this.onGround || this.inWater) && !this.blockedAt(world, nextX, this.position.y + 1, nextZ)) {
       this.position.x = nextX
       this.position.z = nextZ
       this.position.y += 1

@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { BOSS, PLAYER } from '../config/tuning'
 import { FX_COLORS } from '../config/palette'
 import type { Boss } from '../entities/boss'
+import type { Entity } from '../entities/entity'
 import { Projectile } from '../entities/projectile'
 import type { EntityRayHit } from '../player/interact'
 import type { Player } from '../player/player'
@@ -12,7 +13,7 @@ import type { World } from '../world/world'
  * Расходящаяся ударная волна от прыжка босса.
  *
  * Урон наносится в момент, когда фронт волны проходит через игрока, и только если тот
- * стоит на земле. Именно из этого и рождается способ уклонения: подпрыгнуть в нужный
+ * стоит на земле. Именно из этого рождается способ уклонения: подпрыгнуть в нужный
  * момент. Проверять всю зону сразу нельзя — тогда прыжок ничего не давал бы.
  */
 class Shockwave {
@@ -59,6 +60,8 @@ export class Combat {
 
   private throwCooldown = 0
   boss: Boss | null = null
+  /** Дополнительные цели (ночные враги). Список подставляет менеджер ночи. */
+  enemies: readonly Entity[] = []
 
   onPlayerHurt: (() => void) | null = null
   onBossHurt: ((amount: number) => void) | null = null
@@ -70,7 +73,18 @@ export class Combat {
     private readonly fx: Fx,
   ) {}
 
-  /** Метательное игрока по клавише F. */
+  /** Все живые цели для ЛКМ и снарядов игрока. */
+  private *targets(): Iterable<Entity> {
+    if (this.boss !== null && !this.boss.dead) yield this.boss
+    for (const enemy of this.enemies) {
+      if (!enemy.dead) yield enemy
+    }
+  }
+
+  /**
+   * Метательное игрока по клавише F. Заряд (облачко) проверяет и тратит вызывающий:
+   * у боевой системы нет доступа к инвентарю, и это правильно.
+   */
   throwFromPlayer(): boolean {
     if (this.throwCooldown > 0) return false
     this.throwCooldown = PLAYER.throwCooldown
@@ -87,37 +101,9 @@ export class Combat {
     return true
   }
 
-  /** Плевок босса по дуге в указанную точку. */
-  bossSpit(origin: THREE.Vector3, target: THREE.Vector3): void {
-    const velocity = this.ballisticVelocity(origin, target, BOSS.spitSpeed)
-    this.spawn(
-      new Projectile(origin.clone(), velocity, BOSS.spitDamage, FX_COLORS.bossSpit, false, 0.5),
-    )
-  }
-
-  /**
-   * Начальная скорость, чтобы снаряд по дуге пришёл примерно в цель.
-   * Точное баллистическое решение здесь не нужно: снаряд должен быть уклоняемым,
-   * а не самонаводящимся.
-   */
-  private ballisticVelocity(
-    origin: THREE.Vector3,
-    target: THREE.Vector3,
-    speed: number,
-  ): THREE.Vector3 {
-    const to = new THREE.Vector3().subVectors(target, origin)
-    const horizontal = Math.hypot(to.x, to.z)
-    const flightTime = Math.max(0.35, horizontal / speed)
-    return new THREE.Vector3(
-      to.x / flightTime,
-      to.y / flightTime + 0.5 * 14 * flightTime,
-      to.z / flightTime,
-    )
-  }
-
-  /** Прыжок босса приземлился: пускаем волну и трясём экран. */
-  slam(origin: THREE.Vector3, radius: number): void {
-    this.waves.push(new Shockwave(origin.clone(), radius, BOSS.slamDamage))
+  /** Ударная волна: прыжок и выныривание босса зовут её с разной силой. */
+  slam(origin: THREE.Vector3, radius: number, damage: number = BOSS.slamDamage): void {
+    this.waves.push(new Shockwave(origin.clone(), radius, damage))
     this.fx.shockwave(origin, radius, radius / BOSS.shockwaveSpeed)
     this.fx.burst(origin.clone().setY(origin.y + 0.4), FX_COLORS.dust, 26, {
       speed: 7,
@@ -133,31 +119,40 @@ export class Combat {
     this.scene.add(projectile.mesh)
   }
 
-  /** Ближайшая цель на луче для ЛКМ. Смурфиков намеренно не задеть. */
+  /** Ближайшая цель на луче для ЛКМ. Смурфиков и животных намеренно не задеть. */
   raycastEntities(
     origin: THREE.Vector3,
     direction: THREE.Vector3,
     maxDistance: number,
   ): EntityRayHit | null {
-    const boss = this.boss
-    if (boss === null || boss.dead) return null
+    let best: { distance: number; entity: Entity } | null = null
+    for (const entity of this.targets()) {
+      const distance = entity.rayDistance(origin, direction, maxDistance, this.scratch)
+      if (distance !== null && (best === null || distance < best.distance)) {
+        best = { distance, entity }
+      }
+    }
+    if (best === null) return null
 
-    const distance = boss.rayDistance(origin, direction, maxDistance, this.scratch)
-    if (distance === null) return null
-
+    const target = best.entity
     return {
-      distance,
-      applyDamage: () => this.damageBoss(PLAYER.meleeDamage, boss.center(this.scratchB).clone()),
+      distance: best.distance,
+      applyDamage: () =>
+        this.damageEntity(target, PLAYER.meleeDamage, target.center(this.scratchB).clone()),
     }
   }
 
-  private damageBoss(amount: number, at: THREE.Vector3): void {
-    const boss = this.boss
-    if (boss === null || boss.dead) return
-    if (!boss.takeDamage(amount)) return
+  private damageEntity(entity: Entity, amount: number, at: THREE.Vector3): void {
+    if (entity.dead) return
+    if (!entity.takeDamage(amount)) return
     this.fx.burst(at, FX_COLORS.hitFlash, 10, { speed: 4, size: 0.18, life: 0.5 })
     this.fx.addShake(0.12)
-    this.onBossHurt?.(amount)
+    if (entity === this.boss) this.onBossHurt?.(amount)
+  }
+
+  /** Контактный урон по игроку — рывок босса и укусы ночных врагов. */
+  touchPlayer(amount: number): void {
+    this.hurtPlayer(amount)
   }
 
   private hurtPlayer(amount: number): void {
@@ -173,63 +168,39 @@ export class Combat {
   }
 
   private updateProjectiles(dt: number): void {
-    const boss = this.boss
-
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i]
-      const hitBlock = projectile.update(dt, this.world)
+      projectile.update(dt, this.world)
 
-      if (!projectile.spent) {
-        if (projectile.fromPlayer) {
-          if (boss !== null && !boss.dead) {
-            const center = boss.center(this.scratch)
-            // Радиус попадания щедрый: в босса размером с дом должно быть легко попасть.
-            const reach = projectile.radius + Math.max(boss.radius, boss.height * 0.4)
-            const distance = distanceToSegment(
-              center,
-              projectile.previousPosition,
-              projectile.position,
-              this.scratchB,
-            )
-            if (distance < reach) {
-              this.damageBoss(projectile.damage, projectile.position.clone())
-              projectile.spent = true
-            }
-          }
-        } else {
-          const target = this.scratch.set(
-            this.player.position.x,
-            this.player.position.y + PLAYER.height * 0.5,
-            this.player.position.z,
-          )
+      if (!projectile.spent && projectile.fromPlayer) {
+        for (const entity of this.targets()) {
+          const center = entity.center(this.scratch)
+          // Радиус попадания щедрый: в цель размером с дом должно быть легко попасть.
+          const reach = projectile.radius + Math.max(entity.radius, entity.height * 0.4)
           const distance = distanceToSegment(
-            target,
+            center,
             projectile.previousPosition,
             projectile.position,
             this.scratchB,
           )
-          if (distance < projectile.radius + 0.7) {
-            this.hurtPlayer(projectile.damage)
+          if (distance < reach) {
+            this.damageEntity(entity, projectile.damage, projectile.position.clone())
             projectile.spent = true
+            break
           }
         }
       }
 
       if (projectile.spent) {
-        this.fx.burst(
-          projectile.position,
-          projectile.fromPlayer ? FX_COLORS.playerBlob : FX_COLORS.bossSpit,
-          8,
-          { speed: 3, size: 0.13, life: 0.5 },
-        )
+        this.fx.burst(projectile.position, FX_COLORS.playerBlob, 8, {
+          speed: 3,
+          size: 0.13,
+          life: 0.5,
+        })
         this.scene.remove(projectile.mesh)
         projectile.dispose()
         this.projectiles.splice(i, 1)
-        continue
       }
-
-      // hitBlock уже помечает снаряд израсходованным; отдельной ветки не нужно.
-      void hitBlock
     }
   }
 

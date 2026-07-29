@@ -1,6 +1,6 @@
 import { AO_LEVELS, FACE_TINT } from '../config/palette'
 import { WORLD } from '../config/tuning'
-import { Block, blockDef, isOpaque } from './blocks'
+import { Block, blockDef, isBed, isDoor, isOpaque, isWater, waterLevel } from './blocks'
 
 /**
  * Мешер чанка: строит геометрию с отсечением невидимых граней и запечённым в vertex colors
@@ -241,13 +241,19 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
         const wz = originZ + z
         const id = reader(wx, wy, wz)
         if (id === Block.Air) continue
+        // Двери рисуются отдельными мешами (см. render/doors.ts), а не кубами.
+        if (isDoor(id)) continue
 
         const def = blockDef(id)
         const target = def.transparent === true ? transparent : opaque
-        const isWater = id === Block.Water
-        // Поверхность воды опускаем — так видно, что это не полный куб.
-        const waterAbove = isWater && reader(wx, wy + 1, wz) === Block.Water
-        const yTop = isWater && !waterAbove ? 0.88 : 1.0
+        const water = isWater(id)
+        // Высота поверхности: у воды зависит от уровня (лужа читается как лужа),
+        // у частичных блоков (кроватка, грядка) берётся из реестра.
+        let yTop = def.height ?? 1.0
+        if (water) {
+          const waterAbove = isWater(reader(wx, wy + 1, wz))
+          yTop = waterAbove ? 1.0 : 0.4 + waterLevel(id) * 0.12
+        }
         const jitter = voxelJitter(wx, wy, wz, def.variation ?? 0)
 
         for (const face of FACES) {
@@ -258,6 +264,11 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
           // Грань не нужна, если сосед её полностью закрывает или это тот же блок
           // (так гасятся внутренние грани воды и стекла).
           if (isOpaque(neighbor) || neighbor === id) continue
+          // Между двумя водами грань рисует только более высокая сторона, иначе на
+          // границе уровней два копланарных квада мерцают друг о друга.
+          if (water && isWater(neighbor) && waterLevel(neighbor) >= waterLevel(id)) continue
+          // Половины кроватки — один предмет: внутренняя грань между ними не нужна.
+          if (isBed(id) && isBed(neighbor)) continue
 
           const hex = face.isTop
             ? def.topColor ?? def.color
@@ -265,7 +276,8 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
               ? def.bottomColor ?? def.color
               : def.color
           const alpha = def.opacity ?? 1
-          const shade = face.tint * jitter
+          // glow > 1 выводит цвет за единицу — его подхватывает порог блума.
+          const shade = face.tint * jitter * (def.glow ?? 1)
           const baseR = srgbToLinear(((hex >> 16) & 0xff) / 255) * shade
           const baseG = srgbToLinear(((hex >> 8) & 0xff) / 255) * shade
           const baseB = srgbToLinear((hex & 0xff) / 255) * shade

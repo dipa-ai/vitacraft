@@ -12,6 +12,10 @@ export const WORLD = {
   /** Не больше столько перестроек мешей за кадр — иначе фризы при активной стройке. */
   remeshPerFrame: 2,
   seed: 1337,
+  /** Период тика симуляции воды, секунды (5 Гц). */
+  waterTick: 0.2,
+  /** Не больше столько водяных клеток за тик — вода течёт спокойно и не съедает кадр. */
+  waterBudget: 48,
 } as const
 
 export const PLAYER = {
@@ -29,6 +33,9 @@ export const PLAYER = {
   maxHealth: 10,
   /** Неуязвимость после получения урона, секунды. */
   invulnerable: 0.5,
+  /** Регенерация: пауза после последнего урона и период восстановления сердечка. */
+  regenDelay: 6.0,
+  regenInterval: 3.0,
   reach: 5.0,
   /** Ломать блоки заметно быстрее, чем бить: удержание ЛКМ должно сносить стену потоком. */
   blockBreakCooldown: 0.2,
@@ -59,8 +66,39 @@ export const VILLAGE = {
   /** Минимальный внутренний объём комнаты в воксельных клетках. */
   minRoomVolume: 8,
   smurfSpeed: 1.9,
-  /** Радиус блуждания смурфика вокруг своего дома. */
+  /** Радиус блуждания смурфика вокруг точки интереса. */
   wanderRadius: 7,
+  /** Смурфики приходят пешком с этого расстояния — «от горизонта», а не из воздуха. */
+  arriveDistance: 48,
+  /** Квест «зверинец»: сколько животных привести. */
+  animalsRequired: 3,
+  /** Животные идут за морковкой в руках в этом радиусе. */
+  animalFollowRadius: 8,
+  /** Животное считается приведённым внутри этого радиуса от центра деревни. */
+  deliverRadius: 14,
+  /** Квест «пруд»: столько клеток воды выше уровня моря рядом с деревней. */
+  pondCellsRequired: 9,
+  pondScanRadius: 22,
+  /** Квест «облачка»: сколько зарядов собрать с ночных врагов. */
+  cloudsRequired: 10,
+} as const
+
+export const NIGHT = {
+  /** Лимит одновременных врагов по стадии квеста: до ночного квеста мягко. */
+  maxEnemiesEarly: 2,
+  maxEnemiesQuest: 4,
+  maxEnemiesLate: 6,
+  spawnInterval: 5.0,
+  spawnMin: 22,
+  spawnMax: 38,
+  lurkerHealth: 4,
+  lurkerSpeed: 2.7,
+  lurkerDamage: 1,
+  lurkerTouchCooldown: 1.0,
+  /** Смурфик пугается и бежит домой, когда враг ближе. */
+  scareRadius: 9,
+  cloudDropMin: 1,
+  cloudDropMax: 2,
 } as const
 
 export const BOSS = {
@@ -71,16 +109,24 @@ export const BOSS = {
   scale: 3.2,
   chaseSpeed: 3.4,
   enrageSpeedBonus: 1.6,
-  /** Телеграфы — без них бой нечестный. */
-  slamTelegraph: 0.6,
-  spitTelegraph: 0.4,
+  /** Телеграфы — без них бой нечестный. Кроличьи атаки: прыжок, рывок, подкоп. */
+  leapTelegraph: 0.7,
+  leapSpeed: 14.0,
+  dashTelegraph: 0.45,
+  dashSpeed: 16.0,
+  dashDuration: 0.55,
+  dashDamage: 2,
+  burrowTelegraph: 0.5,
+  /** Время «под землёй» — дрожь идёт к игроку. */
+  burrowTravel: 1.1,
+  /** Выныривает не дальше этого от игрока. */
+  emergeRadius: 4.0,
+  emergeShockRadius: 4.5,
+  emergeDamage: 1,
   slamDamage: 3,
-  spitDamage: 2,
   slamRadius: 9.0,
   shockwaveSpeed: 11.0,
-  spitSpeed: 15.0,
   attackCooldown: 2.2,
-  enrageCooldownScale: 0.6,
   spawnDistance: 18,
 } as const
 

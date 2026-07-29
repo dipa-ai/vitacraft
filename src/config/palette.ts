@@ -24,8 +24,15 @@ export const BLOCK_COLORS = {
   paintedMint: 0xa8f0d8,
   bedCap: 0xff8fa3,
   bedStem: 0xfff1dc,
+  bedBlanket: 0xa9c8ff,
   flowerPink: 0xff9ec7,
   flowerYellow: 0xffe07a,
+  door: 0xd08a5a,
+  doorDark: 0xb87244,
+  carrot: 0xff9d4d,
+  carrotLeaf: 0x86d17a,
+  cloud: 0xf4fbff,
+  lantern: 0xffcf7d,
 } as const
 
 /** Небо, туман и свет — днём и ночью. Между ними интерполируем в цикле дня. */
@@ -62,18 +69,33 @@ export const CREATURE_COLORS = {
   smurfBody: 0x6fb7e8,
   smurfSkin: 0x9fd8ff,
   smurfCap: 0xffffff,
+  smurfCapElder: 0xff8073,
   smurfPants: 0xffffff,
   playerBody: 0xffc48a,
   playerShirt: 0x7fc9a0,
   playerPants: 0x6a7fc0,
-  bossBody: 0xb39dda,
-  bossBodyDark: 0x8f79bb,
-  bossBelly: 0xe8dcff,
+  // Витрулян — рыжий кролик.
+  bossFur: 0xeb9a5f,
+  bossFurDark: 0xcf7d43,
+  bossBelly: 0xffeeda,
+  bossEarInner: 0xffb9c8,
+  bossTail: 0xfff6ec,
   bossEye: 0xfffdf7,
   bossPupil: 0x2b2340,
   bossMouth: 0xff7d9c,
   bossTooth: 0xfffdf7,
   bossGlow: 0xffe1f4,
+  // Ночные зверюшки.
+  lurkerBody: 0x4b4364,
+  lurkerBodyDark: 0x3a3450,
+  lurkerEye: 0xffd9f2,
+  // Дневная живность.
+  rabbitFur: 0xe3d5c4,
+  rabbitEar: 0xffc9d4,
+  sheepWool: 0xfdf4ec,
+  sheepFace: 0xc9a57b,
+  birdBody: 0xffd98a,
+  birdBeak: 0xff9d4d,
 } as const
 
 /** Цвета эффектов и интерфейса. */

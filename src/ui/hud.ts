@@ -1,5 +1,5 @@
 import { PLAYER } from '../config/tuning'
-import { type Block, blockDef } from '../world/blocks'
+import { ALL_BLOCKS, type Block, blockDef } from '../world/blocks'
 
 /** Работа с DOM-оверлеем: сердечки, хотбар, задания, реплики и полноэкранные карточки. */
 export class Hud {
@@ -16,6 +16,7 @@ export class Hud {
   private readonly overlayEl = requireEl('overlay')
   private readonly overlayCardEl = requireEl('overlay-card')
   private readonly vignetteEl = requireEl('vignette')
+  private readonly resourcesEl = requireEl('resources')
 
   private heartEls: HTMLElement[] = []
   private slotEls: HTMLElement[] = []
@@ -25,6 +26,48 @@ export class Hud {
 
   constructor() {
     this.buildHearts()
+    this.buildResources()
+  }
+
+  /** Панель ресурсов (Tab): собирается из описаний в реестре блоков. */
+  private buildResources(): void {
+    const list = this.resourcesEl.querySelector<HTMLElement>('.list')!
+    list.textContent = ''
+    for (const def of ALL_BLOCKS) {
+      if (def.description === undefined) continue
+      const row = document.createElement('div')
+      row.className = 'res-row'
+
+      const swatch = document.createElement('div')
+      swatch.className = 'swatch'
+      swatch.style.background = `#${(def.topColor ?? def.color).toString(16).padStart(6, '0')}`
+
+      const name = document.createElement('div')
+      name.className = 'name'
+      name.textContent = def.name
+
+      const info = document.createElement('div')
+      info.className = 'info'
+      info.textContent = def.description
+      if (def.source !== undefined) {
+        const source = document.createElement('span')
+        source.className = 'src'
+        source.textContent = def.source
+        info.append(source)
+      }
+
+      row.append(swatch, name, info)
+      list.append(row)
+    }
+  }
+
+  toggleResources(): boolean {
+    const visible = this.resourcesEl.classList.toggle('show')
+    return visible
+  }
+
+  hideResources(): void {
+    this.resourcesEl.classList.remove('show')
   }
 
   private buildHearts(): void {
@@ -46,11 +89,12 @@ export class Hud {
       const def = blockDef(block)
       const slot = document.createElement('div')
       slot.className = 'slot'
-      slot.title = def.name
+      slot.title = def.description !== undefined ? `${def.name} — ${def.description}` : def.name
 
       const key = document.createElement('span')
       key.className = 'key'
-      key.textContent = String(index + 1)
+      // Цифрами выбираются только первые девять слотов; дальше — колесом.
+      key.textContent = index < 9 ? String(index + 1) : ''
 
       const swatch = document.createElement('div')
       swatch.className = 'swatch'

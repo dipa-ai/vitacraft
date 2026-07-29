@@ -4,6 +4,7 @@ import { Block, isSolid } from './blocks'
 import { Chunk, chunkKey } from './chunk'
 import { COLOR_COMPONENTS, meshChunk, type MeshData, type VoxelReader } from './mesher'
 import { TerrainGenerator } from './terrain'
+import { WaterSim, type WaterWorld } from './water'
 
 const { chunkSizeX, chunkSizeY, chunkSizeZ, viewRadius, remeshPerFrame } = WORLD
 
@@ -23,6 +24,13 @@ export class World {
 
   /** Блоки, изменённые игроком — только они попадают в сохранение. */
   readonly edits = new Map<string, Block>()
+
+  readonly water = new WaterSim()
+  /** Узкий доступ для симуляции воды: пишет без записи в дифф игрока. */
+  private readonly waterAccess: WaterWorld = {
+    getVoxel: (x, y, z) => this.reader(x, y, z),
+    setFluid: (x, y, z, id) => this.setVoxel(x, y, z, id, false),
+  }
 
   constructor(seed: number = WORLD.seed) {
     this.terrain = new TerrainGenerator(seed)
@@ -78,6 +86,9 @@ export class World {
 
     chunk.set(x - chunk.cx * chunkSizeX, y, z - chunk.cz * chunkSizeZ, id)
     if (recordEdit) this.edits.set(`${x},${y},${z}`, id)
+
+    // Любое изменение будит воду рядом: копнул у озера — вода затекает в яму.
+    this.water.wake(this.waterAccess, x, y, z)
 
     // 3×3 вокруг изменённого блока: захватывает и рёбра, и углы, от которых зависит AO.
     for (let dz = -1; dz <= 1; dz++) {
@@ -171,8 +182,10 @@ export class World {
     }
   }
 
-  /** Перестраивает ограниченное число мешей за кадр — иначе стройка вызывает фризы. */
-  update(): void {
+  /** Перестраивает ограниченное число мешей за кадр и тикает воду. */
+  update(dt = 0): void {
+    if (dt > 0) this.water.update(dt, this.waterAccess)
+
     let built = 0
     while (built < remeshPerFrame && this.remeshQueue.length > 0) {
       const chunk = this.remeshQueue.shift()
@@ -254,7 +267,7 @@ export class World {
     mesh.geometry.dispose()
   }
 
-  /** Высота, на которую можно безопасно поставить существо в этом столбце. */
+  /** Верх любой твёрдой геометрии в столбце — включая кроны деревьев и постройки. */
   surfaceY(x: number, z: number): number {
     const ix = Math.floor(x)
     const iz = Math.floor(z)
@@ -262,6 +275,37 @@ export class World {
       if (isSolid(this.reader(ix, y, iz))) return y + 1
     }
     return 1
+  }
+
+  /**
+   * Высота РЕЛЬЕФА без растительности — для спавна существ. surfaceY здесь не годится:
+   * листва solid, и точка прихода попадала на крону дерева, откуда смурфик падал.
+   * Считается чистой математикой террагена, поэтому работает и вне прогруженных чанков.
+   */
+  groundY(x: number, z: number): number {
+    return this.terrain.surfaceHeight(Math.floor(x), Math.floor(z)) + 1
+  }
+
+  /** Сгенерирован ли чанк под этой мировой координатой. */
+  isChunkGenerated(x: number, z: number): boolean {
+    const chunk = this.chunks.get(chunkKey(toChunkCoord(Math.floor(x)), toChunkCoord(Math.floor(z))))
+    return chunk !== undefined && chunk.generated
+  }
+
+  /**
+   * Догенерирует чанки вокруг точки, не трогая выгрузку дальних (в отличие от
+   * ensureAround, который перецентрировал бы весь прогруз). Нужно для спавна существ
+   * на подходе к деревне.
+   */
+  ensureChunkAt(x: number, z: number, radius = 1): void {
+    const ccx = toChunkCoord(Math.floor(x))
+    const ccz = toChunkCoord(Math.floor(z))
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const chunk = this.chunkAt(ccx + dx, ccz + dz)
+        if (chunk.dirty && !this.remeshQueue.includes(chunk)) this.remeshQueue.push(chunk)
+      }
+    }
   }
 
   dispose(): void {

@@ -1,4 +1,4 @@
-import { HOTBAR_BLOCKS, type Block } from './world/blocks'
+import { Block, HOTBAR_BLOCKS } from './world/blocks'
 
 /**
  * Сохранение в localStorage.
@@ -10,8 +10,16 @@ import { HOTBAR_BLOCKS, type Block } from './world/blocks'
 
 const STORAGE_KEY = 'vitacraft.save.v1'
 
+/** Прогресс цепочки испытаний. Дома и пруд выводятся из мира, остальное — отсюда. */
+export interface QuestSave {
+  stage: number
+  animals: number
+  night: boolean
+  clouds: number
+}
+
 export interface SaveData {
-  version: 1
+  version: 2
   seed: number
   /** Изменённые игроком блоки в виде "x,y,z" → id блока. */
   edits: Record<string, number>
@@ -22,6 +30,7 @@ export interface SaveData {
   stage: string
   /** Позиции кроваток: по ним деревня пересобирает дома после загрузки. */
   beds: [number, number, number][]
+  quest: QuestSave
 }
 
 export function saveGame(data: SaveData): void {
@@ -37,9 +46,24 @@ export function loadGame(): SaveData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw === null) return null
-    const parsed = JSON.parse(raw) as SaveData
-    if (parsed.version !== 1) return null
-    return parsed
+    const parsed = JSON.parse(raw) as SaveData & { version: number }
+    if (parsed.version === 2) return parsed
+
+    if (parsed.version === 1) {
+      // Партия первой версии: постройки и инвентарь целы, цепочка выводится из старой
+      // стадии — «won» значит всё пройдено, иначе прогресс начинается с домов.
+      return {
+        ...parsed,
+        version: 2,
+        quest: {
+          stage: parsed.stage === 'won' ? 5 : 0,
+          animals: 0,
+          night: false,
+          clouds: 0,
+        },
+      }
+    }
+    return null
   } catch (error) {
     console.warn('Сохранение повреждено, начинаем заново:', error)
     return null
@@ -66,7 +90,16 @@ export function restoreInventory(
   inventory: Map<Block, number>,
   saved: Record<string, number>,
 ): void {
+  // Сохранённые значения ЗАМЕНЯЮТ стартовый запас, а не прибавляются к нему — иначе
+  // каждая загрузка бесплатно дарила бы полный стартовый набор. Складываются только
+  // записи внутри самого сейва (старая кроватка сливается в новую).
+  const merged = new Map<Block, number>()
   for (const [key, count] of Object.entries(saved)) {
-    inventory.set(Number(key) as Block, count)
+    let block = Number(key) as Block
+    if (block === Block.Bed) block = Block.BedHead
+    merged.set(block, (merged.get(block) ?? 0) + count)
+  }
+  for (const [block, count] of merged) {
+    inventory.set(block, count)
   }
 }

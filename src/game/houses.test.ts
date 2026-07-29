@@ -157,6 +157,38 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
+  it('комната с закрытой дверью — герметичный дом', () => {
+    const { reader: base, bed } = box(5)
+    // Дверь в стене: две клетки по вертикали.
+    const withDoor: VoxelReader = (x, y, z) => {
+      if (x === 0 && z === 2 && (y === 1 || y === 2)) return Block.DoorClosed
+      return base(x, y, z)
+    }
+    const result = validateRoom(withDoor, ...bed)
+    expect(result.ok).toBe(true)
+  })
+
+  it('открытая дверь тоже запечатывает: смурфик может выйти, а дом остаётся домом', () => {
+    const { reader: base, bed } = box(5)
+    const withDoor: VoxelReader = (x, y, z) => {
+      if (x === 0 && z === 2 && (y === 1 || y === 2)) return Block.DoorOpen
+      return base(x, y, z)
+    }
+    const result = validateRoom(withDoor, ...bed)
+    expect(result.ok).toBe(true)
+  })
+
+  it('двухблочная кроватка распознаётся с обеих половин', () => {
+    const { reader: base } = box(5, Block.Pink, { bed: false })
+    const withPair: VoxelReader = (x, y, z) => {
+      if (x === 1 && y === 1 && z === 1) return Block.BedHead
+      if (x === 2 && y === 1 && z === 1) return Block.BedFoot
+      return base(x, y, z)
+    }
+    expect(validateRoom(withPair, 1, 1, 1).ok).toBe(true)
+    expect(validateRoom(withPair, 2, 1, 1).ok).toBe(true)
+  })
+
   it('возвращает клетки комнаты, чтобы было куда поселить смурфика', () => {
     const { reader, bed } = box(5)
     const result = validateRoom(reader, ...bed)

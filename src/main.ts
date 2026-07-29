@@ -1,12 +1,15 @@
 import * as THREE from 'three'
-import { BOSS, CAMERA, DAY, PLAYER, WORLD } from './config/tuning'
+import { BOSS, CAMERA, DAY, NIGHT, PLAYER, WORLD } from './config/tuning'
 import { Boss } from './entities/boss'
 import { Combat } from './game/combat'
+import { Fauna } from './game/fauna'
+import { NightManager } from './game/night'
 import { Village } from './game/quest'
 import { Controls } from './player/controls'
 import { Interaction } from './player/interact'
 import { Player } from './player/player'
 import { Audio } from './render/audio'
+import { DoorVisuals } from './render/doors'
 import { Fx } from './render/fx'
 import { createPlayerModel } from './render/models'
 import { SceneRig } from './render/scene'
@@ -19,20 +22,24 @@ import {
   type SaveData,
 } from './save'
 import { Hud } from './ui/hud'
+import { FX_COLORS } from './config/palette'
 import { Block, HOTBAR_BLOCKS, blockDef, isSolid } from './world/blocks'
 import { raycastVoxels } from './world/raycast'
 import { World, toChunkCoord } from './world/world'
 
 const START_CARD = `
   <h1>Vita<span class="accent">Craft</span></h1>
-  <p>Мягкий воксельный мир, деревня для смурфиков и один очень большой пушистый босс.</p>
+  <p>Мягкий воксельный мир, деревня для смурфиков, ночи с тёмными зверюшками
+  и один очень большой рыжий кролик.</p>
   <div class="keys">
     <b>WASD</b><span>идти, <b>Shift</b> — бежать</span>
     <b>Space</b><span>прыжок</span>
     <b>ЛКМ</b><span>ломать блок или ударить</span>
     <b>ПКМ</b><span>поставить блок</span>
-    <b>F</b><span>метнуть светящийся комок</span>
-    <b>1–9</b><span>выбрать блок, колесо мыши тоже</span>
+    <b>F</b><span>метнуть облачко (добывается из ночных зверюшек)</span>
+    <b>ПКМ</b><span>по двери — открыть или закрыть</span>
+    <b>1–9</b><span>выбрать блок, колесо крутит все слоты</span>
+    <b>Tab</b><span>панель ресурсов: что это и где взять</span>
     <b>F5</b><span>сменить вид: от первого лица ↔ от третьего (или <b>V</b>)</span>
     <b>Esc</b><span>пауза</span>
   </div>
@@ -51,8 +58,8 @@ const DEATH_CARD = `
 
 const WIN_CARD = `
   <h1>Витрулян <span class="accent">побеждён!</span></h1>
-  <p>Деревня смурфиков в безопасности, а от большой пушистой зверюшки остались
-  разноцветные блоки — забери их себе на память.</p>
+  <p>Деревня смурфиков в безопасности: большой рыжий кролик ускакал в закат,
+  оставив после себя горку разноцветных блоков.</p>
   <p>Мир остаётся твоим: строй дальше сколько хочешь.</p>
 `
 
@@ -72,6 +79,9 @@ class Game {
   private readonly audio = new Audio()
   private readonly village: Village
   private readonly combat: Combat
+  private readonly doors: DoorVisuals
+  private readonly fauna: Fauna
+  private readonly night: NightManager
   private saveTimer = 0
   /**
    * Разрешено ли писать сохранение при закрытии страницы. Сбрасывается кнопкой
@@ -110,6 +120,9 @@ class Game {
     this.interact = new Interaction(this.world, this.player)
     this.village = new Village(this.world, this.rig.scene, this.player, this.fx)
     this.combat = new Combat(this.world, this.rig.scene, this.player, this.fx)
+    this.doors = new DoorVisuals(this.rig.scene, this.world)
+    this.fauna = new Fauna(this.world, this.rig.scene)
+    this.night = new NightManager(this.world, this.rig.scene, this.fx)
 
     this.rig.scene.add(this.playerModel.group)
     this.playerModel.group.visible = false
@@ -118,6 +131,7 @@ class Game {
     this.wireControls()
     this.wireVillage()
     this.wireCombat()
+    this.wireNight()
     this.spawn()
   }
 
@@ -126,15 +140,27 @@ class Game {
     this.interact.entityRaycaster = (origin, direction, maxDistance) =>
       this.combat.raycastEntities(origin, direction, maxDistance)
     this.controls.onThrow = () => {
-      if (!this.combat.throwFromPlayer()) return
+      // Сначала заряд, потом бросок: облачки — добываемый ресурс, а не бесконечная кнопка.
+      if (!this.interact.consumeCloud()) {
+        this.hud.toastOnce('no-cloud', 'Нет облачков! Они выпадают из ночных зверюшек')
+        return
+      }
+      if (!this.combat.throwFromPlayer()) {
+        // Бросок не случился из-за кулдауна — заряд возвращаем.
+        this.interact.add(Block.Cloud)
+        return
+      }
       this.audio.throwBlob()
-      this.hud.toastOnce('throw', 'Комок летит по дуге — целься чуть выше')
+      this.hud.toastOnce('throw', 'Облачко летит по дуге — целься чуть выше')
     }
     this.interact.onMelee = () => this.audio.hitBoss()
     this.combat.onBossHurt = () => this.audio.hitBoss()
     this.combat.onPlayerHurt = () => {
       this.audio.hurt()
-      if (this.player.dead) this.showDeath()
+      if (this.player.dead) {
+        this.night.markPlayerDied()
+        this.showDeath()
+      }
     }
   }
 
@@ -165,8 +191,15 @@ class Game {
     }
     this.village.onHint = (id, text) => this.hud.toastOnce(id, text)
     this.village.onSettled = () => this.audio.smurfSettled()
-    this.village.onProgress = (done, total) => {
-      this.hud.setQuest(`Построй домики для смурфиков: ${done} из ${total}`, done, total)
+    this.village.onProgress = (title, done, total) => {
+      // Для одношаговых заданий счётчик «1 из 1» — шум, а не информация.
+      this.hud.setQuest(total > 1 ? `${title}: ${done} из ${total}` : title, done, total)
+    }
+    this.village.setDoor = (x, y, z, open) => {
+      const id = this.world.getVoxel(x, y, z)
+      const wantToggle =
+        (open && id === Block.DoorClosed) || (!open && id === Block.DoorOpen)
+      if (wantToggle) this.interact.toggleDoor(x, y, z)
     }
     this.village.onCompleted = () => {
       if (this.stage !== 'village') return
@@ -174,8 +207,31 @@ class Game {
       this.bossCountdown = 5
       // Ночь наступает вместе с боссом: смена освещения делает событие событием.
       this.dayTime = DAY.lengthSeconds * 0.72
-      this.hud.toast('Деревня готова! Но что-то большое проснулось за холмами…', 6000)
+      this.hud.toast('Все испытания пройдены! Но за холмами кто-то большой и рыжий…', 6000)
       this.fx.addShake(0.5)
+    }
+
+    this.fauna.onDelivered = () => {
+      this.audio.smurfSettled()
+      this.village.markAnimalDelivered()
+    }
+  }
+
+  private wireNight(): void {
+    this.night.onDusk = () => {
+      this.hud.toast('Темнеет… Ночью лезут тёмные зверюшки — в доме безопасно', 5000)
+      this.audio.bossRoar()
+    }
+    this.night.onDawn = (survived) => {
+      this.hud.toast('Рассвет! Зверюшки растаяли', 3500)
+      if (survived) this.village.markNightSurvived()
+    }
+    this.night.onBite = (damage) => this.combat.touchPlayer(damage)
+    this.night.onCloudDrop = (count, at) => {
+      this.interact.add(Block.Cloud, count)
+      this.village.markCloudsGathered(count)
+      this.fx.hearts(at.clone().setY(at.y + 1), 4)
+      this.hud.toast(`+${count} облачк${count === 1 ? 'о' : 'а'}`, 1800)
     }
   }
 
@@ -189,9 +245,15 @@ class Game {
     this.controls.onCameraToggle = (mode) => {
       this.hud.toast(mode === 'first' ? 'Вид: от первого лица' : 'Вид: от третьего лица', 1600)
     }
+    this.controls.onToggleResources = () => this.hud.toggleResources()
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }
+    this.interact.onScooped = () => this.audio.placeBlock()
+    this.interact.onDoorToggled = () => this.audio.placeBlock()
+    // Единая точка правды для дверных мешей: любое изменение блока может создать,
+    // убрать или переключить дверь.
+    this.interact.onBlockChanged = (x, y, z) => this.doors.onBlockChanged(x, y, z)
   }
 
   private spawn(): void {
@@ -240,9 +302,14 @@ class Game {
 
     // Дома пересобираем прогоном той же проверки, что и при обычной установке кроватки —
     // отдельного формата для домов не держим, чтобы правила были ровно одни.
+    // Блок читаем из мира: в старых сохранениях кроватка одноклеточная, в новых — парная.
+    this.village.restoreProgress(saved.quest)
     for (const [x, y, z] of saved.beds) {
-      this.village.handleBlockPlaced(x, y, z, Block.Bed)
+      this.village.handleBlockPlaced(x, y, z, this.world.getVoxel(x, y, z))
     }
+    this.doors.rebuildFromEdits()
+    // Приведённые животные хранятся числом — расставляем их заново по деревне.
+    this.fauna.restoreDelivered(saved.quest.animals, this.village.center())
 
     // Незаконченный бой не сохраняем: босс придёт заново, а не окажется полумёртвым
     // и невидимым.
@@ -260,7 +327,7 @@ class Game {
     for (const [key, id] of this.world.edits) edits[key] = id
 
     return {
-      version: 1,
+      version: 2,
       seed: WORLD.seed,
       edits,
       player: {
@@ -275,6 +342,12 @@ class Game {
       dayTime: this.dayTime,
       stage: this.stage,
       beds: this.village.bedPositions,
+      quest: {
+        stage: this.village.stage,
+        animals: this.village.animalsDelivered,
+        night: this.village.nightSurvived,
+        clouds: this.village.cloudsGathered,
+      },
     }
   }
 
@@ -341,6 +414,7 @@ class Game {
    */
   private respawnAfterDeath(): void {
     this.combat.clear()
+    this.night.scatter()
     this.player.respawn(
       this.spawnPoint.x,
       this.world.surfaceY(this.spawnPoint.x, this.spawnPoint.z),
@@ -369,13 +443,17 @@ class Game {
     this.world.flushRemesh(9)
 
     const boss = new Boss(new THREE.Vector3(x, this.world.surfaceY(x, z) + 1, z))
-    boss.onSlam = (origin, radius) => {
-      this.combat.slam(origin, radius)
+    boss.onSlam = (origin, radius, damage) => {
+      this.combat.slam(origin, radius, damage)
       this.audio.bossSlam()
     }
-    boss.onSpit = (origin, target) => {
-      this.combat.bossSpit(origin, target)
+    boss.onTouch = (damage) => {
+      this.combat.touchPlayer(damage)
       this.audio.bossSpit()
+    }
+    boss.onTremor = (position) => {
+      // Дрожь земли — телеграф подкопа: игрок видит, куда кролик вынырнет.
+      this.fx.burst(position, FX_COLORS.dust, 3, { speed: 2.2, size: 0.14, life: 0.4 })
     }
     boss.onRoar = (text) => {
       this.hud.toast(text, 3000)
@@ -447,13 +525,35 @@ class Game {
     if (wasOnGround && !this.player.onGround && this.player.velocity.y > 0) this.audio.jump()
 
     this.interact.update(dt, this.controls.attackHeld)
+
+    // Ночь: лимит врагов растёт со стадией квеста, чтобы первая ночь была обучающей.
+    this.night.maxEnemies = this.village.completed
+      ? NIGHT.maxEnemiesLate
+      : this.village.stage >= 3
+        ? NIGHT.maxEnemiesQuest
+        : NIGHT.maxEnemiesEarly
+    this.night.update(dt, this.elapsed, this.dayFraction(), this.player.position, this.village.residents)
+    this.combat.enemies = this.night.lurkers
+
+    this.village.threats = this.night.threatPositions
+    this.village.night = this.night.isNight
     this.village.update(dt, this.elapsed)
+
+    this.fauna.update(
+      dt,
+      this.elapsed,
+      this.player.position,
+      this.interact.holdingCarrot,
+      this.village.center(),
+      this.village.threats,
+    )
+
     this.updateBossStage(dt)
     this.combat.update(dt)
     this.fx.update(dt)
 
     this.streamChunks()
-    this.world.update()
+    this.world.update(dt)
 
     this.updatePlayerModel(dt)
     this.updateCamera()

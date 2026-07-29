@@ -115,6 +115,10 @@ export class TerrainGenerator {
           this.placeTree(chunk, wx, h + 1, wz)
         } else if (hash2(wx, wz, 23) < 0.01) {
           this.setWorld(chunk, wx, h + 1, wz, Block.Blossom)
+        } else if (hash2(Math.floor(wx / 3), Math.floor(wz / 3), 67) < 0.02 && hash2(wx, wz, 71) < 0.5) {
+          // Морковные грядки кустятся пятнами 3×3 (хеш по ячейке), а не поодиночке:
+          // одну грядку в поле не найти, а пятно видно издалека.
+          this.setWorld(chunk, wx, h + 1, wz, Block.CarrotPlant)
         }
       }
     }
