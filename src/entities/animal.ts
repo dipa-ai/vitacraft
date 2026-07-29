@@ -30,6 +30,8 @@ export class Animal extends Entity {
   private readonly target = new THREE.Vector3()
   private waitTimer = 0
   private hopTimer = 0
+  /** Не дошли до цели за это время — цель плохая (за стеной), выбираем новую. */
+  private targetTimeout = 0
 
   constructor(
     readonly kind: AnimalKind,
@@ -64,7 +66,7 @@ export class Animal extends Entity {
       // Морковка! Идём за игроком.
       this.walkTo(ctx.carrotHolder.x, ctx.carrotHolder.z, speed * 1.25, dt)
     } else {
-      this.graze(dt, speed)
+      this.graze(dt, world, speed)
     }
 
     // Кролики и цыплята передвигаются прыжками — это почти вся их «милота».
@@ -79,35 +81,48 @@ export class Animal extends Entity {
     this.syncModel(elapsed, dt)
   }
 
-  private graze(dt: number, speed: number): void {
+  private graze(dt: number, world: World, speed: number): void {
     if (this.waitTimer > 0) {
       this.waitTimer -= dt
       this.velocity.x = 0
       this.velocity.z = 0
       return
     }
-    if (this.horizontalDistance(this.target) < 0.8) {
+
+    // Дом переселённого зверя — у центра деревни, и цель выпаса легко выпадает внутри
+    // домика. Валидация плюс таймаут не дают зверю вечно тыкаться лбом в стену.
+    this.targetTimeout -= dt
+    if (this.horizontalDistance(this.target) < 0.8 || this.targetTimeout <= 0) {
       this.waitTimer = 1.5 + Math.random() * 3
+      this.targetTimeout = 8
       const angle = Math.random() * Math.PI * 2
       const distance = 1 + Math.random() * 5
-      this.target.set(
-        this.home.x + Math.cos(angle) * distance,
-        this.home.y,
-        this.home.z + Math.sin(angle) * distance,
-      )
+      const tx = this.home.x + Math.cos(angle) * distance
+      const tz = this.home.z + Math.sin(angle) * distance
+      const ty = world.groundY(tx, tz)
+      if (world.isSolidAt(tx, ty, tz) || world.isSolidAt(tx, ty + 1, tz)) {
+        // Точка в стене — постоим и бросим кубик заново.
+        this.targetTimeout = 0
+        return
+      }
+      this.target.set(tx, this.home.y, tz)
       return
     }
     this.walkTo(this.target.x, this.target.z, speed * 0.7, dt)
   }
 
   private walkTo(x: number, z: number, speed: number, dt: number): void {
-    const dx = x - this.position.x
-    const dz = z - this.position.z
+    let dx = x - this.position.x
+    let dz = z - this.position.z
     const length = Math.hypot(dx, dz)
     if (length < 0.001) return
+
+    this.updateNav(dt, length)
+    ;[dx, dz] = this.steer(dx, dz)
+
     this.velocity.x = (dx / length) * speed
     this.velocity.z = (dz / length) * speed
-    this.faceTowards(x, z, dt)
+    this.faceTowards(this.position.x + dx, this.position.z + dz, dt)
   }
 
   private horizontalDistance(point: THREE.Vector3): number {

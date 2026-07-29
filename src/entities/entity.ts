@@ -50,6 +50,43 @@ export abstract class Entity {
   /** Существо в воде (по середине тела). */
   protected inWater = false
 
+  // --- Навигация без поиска пути: детектор застревания + обходной манёвр. ---
+  // Общий для всех существ: и смурфик у стены дома, и овца, упёршаяся в угол,
+  // лечатся одинаково — секунду не сдвинулся, значит сворачиваем вбок.
+  private readonly navLastPosition = new THREE.Vector3(Number.NaN, 0, Number.NaN)
+  private navCheckTimer = 1
+  private detourTimer = 0
+  private detourSign = 1
+
+  /** Зовётся каждый кадр, когда существо реально пытается куда-то идти. */
+  protected updateNav(dt: number, targetDistance: number): void {
+    this.detourTimer = Math.max(0, this.detourTimer - dt)
+    this.navCheckTimer -= dt
+    if (this.navCheckTimer > 0) return
+    this.navCheckTimer = 1
+
+    const moved = Number.isNaN(this.navLastPosition.x)
+      ? Infinity
+      : Math.hypot(
+          this.position.x - this.navLastPosition.x,
+          this.position.z - this.navLastPosition.z,
+        )
+    if (moved < 0.35 && targetDistance > 2) {
+      this.detourTimer = 1.6
+      this.detourSign = Math.random() < 0.5 ? 1 : -1
+    }
+    this.navLastPosition.copy(this.position)
+  }
+
+  /** Поворачивает желаемое направление на ~75°, пока идёт обходной манёвр. */
+  protected steer(dx: number, dz: number): readonly [number, number] {
+    if (this.detourTimer <= 0) return [dx, dz]
+    const angle = this.detourSign * 1.3
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    return [dx * cos - dz * sin, dx * sin + dz * cos]
+  }
+
   /** Гравитация и опора. Возвращает true, если существо только что коснулось земли. */
   protected applyGravity(dt: number, world: CollisionSource): boolean {
     // В воде существа всплывают и плывут поверху: смурфик, утонувший по дороге через

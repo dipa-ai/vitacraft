@@ -17,6 +17,8 @@ export class Hud {
   private readonly overlayCardEl = requireEl('overlay-card')
   private readonly vignetteEl = requireEl('vignette')
   private readonly resourcesEl = requireEl('resources')
+  private readonly itemLabelEl = requireEl('itemlabel')
+  private itemLabelTimer = 0
 
   private heartEls: HTMLElement[] = []
   private slotEls: HTMLElement[] = []
@@ -64,6 +66,25 @@ export class Hud {
   toggleResources(): boolean {
     const visible = this.resourcesEl.classList.toggle('show')
     return visible
+  }
+
+  /**
+   * Подпись выбранного предмета над хотбаром. В pointer lock курсора нет, тултипы
+   * не работают — это единственный способ объяснить, что сейчас в руке.
+   */
+  showItemName(name: string, description?: string): void {
+    this.itemLabelEl.textContent = name
+    if (description !== undefined) {
+      const desc = document.createElement('span')
+      desc.className = 'desc'
+      desc.textContent = description
+      this.itemLabelEl.append(desc)
+    }
+    this.itemLabelEl.classList.add('show')
+    window.clearTimeout(this.itemLabelTimer)
+    this.itemLabelTimer = window.setTimeout(() => {
+      this.itemLabelEl.classList.remove('show')
+    }, 2600)
   }
 
   hideResources(): void {

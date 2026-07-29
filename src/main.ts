@@ -237,8 +237,14 @@ class Game {
 
   private wireControls(): void {
     this.controls.onPlace = () => this.interact.place()
-    this.controls.onSelectSlot = (index) => this.interact.selectSlot(index)
-    this.controls.onCycleSlot = (direction) => this.interact.cycleSlot(direction)
+    this.controls.onSelectSlot = (index) => {
+      this.interact.selectSlot(index)
+      this.showItemLabel()
+    }
+    this.controls.onCycleSlot = (direction) => {
+      this.interact.cycleSlot(direction)
+      this.showItemLabel()
+    }
     this.controls.onUnlock = () => {
       if (!this.paused) this.showPause()
     }
@@ -246,6 +252,12 @@ class Game {
       this.hud.toast(mode === 'first' ? 'Вид: от первого лица' : 'Вид: от третьего лица', 1600)
     }
     this.controls.onToggleResources = () => this.hud.toggleResources()
+  }
+
+  /** Имя и краткое описание того, что сейчас в руке. */
+  private showItemLabel(): void {
+    const def = blockDef(this.interact.activeBlock)
+    this.hud.showItemName(def.name, def.description)
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }

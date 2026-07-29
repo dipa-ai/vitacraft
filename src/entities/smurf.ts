@@ -83,11 +83,10 @@ export class Smurf extends Entity {
   private enterTimer = 0
   private doorOpened = false
 
-  // Обход препятствий без поиска пути: застряли — на пару секунд уходим вбок.
-  private readonly lastPosition = new THREE.Vector3(NaN, 0, NaN)
-  private stuckCheckTimer = 1
-  private detourTimer = 0
-  private detourSign = 1
+  /** Сколько ещё идти к текущей цели прогулки, прежде чем плюнуть и выбрать новую. */
+  private wanderTimeout = 0
+  /** Задержка внутри дома при дневном визите. */
+  private hideTimer = 0
 
   onSay: ((text: string) => void) | null = null
   onGone: (() => void) | null = null
@@ -124,29 +123,6 @@ export class Smurf extends Entity {
       this.applyGravity(dt, world)
     }
 
-    // Детектор застревания: если за секунду ходьбы почти не сдвинулись — прямая
-    // упёрлась в стену или угол, и надо на пару секунд свернуть вбок. Это дешёвая
-    // замена поиску пути, которой хватает для домиков и берегов.
-    this.detourTimer = Math.max(0, this.detourTimer - dt)
-    this.stuckCheckTimer -= dt
-    if (this.stuckCheckTimer <= 0) {
-      const walking =
-        (this.state === 'arriving' || this.state === 'fleeing' || this.state === 'leaving' ||
-          this.state === 'idle') &&
-        this.waitTimer <= 0
-      const moved = Number.isNaN(this.lastPosition.x)
-        ? Infinity
-        : Math.hypot(
-            this.position.x - this.lastPosition.x,
-            this.position.z - this.lastPosition.z,
-          )
-      if (walking && moved < 0.35 && this.horizontalDistanceTo(this.target) > 2) {
-        this.detourTimer = 1.6
-        this.detourSign = Math.random() < 0.5 ? 1 : -1
-      }
-      this.lastPosition.copy(this.position)
-      this.stuckCheckTimer = 1
-    }
 
     switch (this.state) {
       case 'arriving':
@@ -164,16 +140,16 @@ export class Smurf extends Entity {
 
       case 'idle':
         if (this.shouldHide(ctx)) {
-          this.startFleeing(ctx)
+          this.startHome(true)
           break
         }
-        this.wander(dt, ctx)
+        this.wander(dt, world, ctx)
         this.maybeChatter(dt, ctx)
         break
 
       case 'fleeing':
         this.walkTo(dt, VILLAGE.smurfSpeed * 1.8)
-        if (this.horizontalDistanceTo(this.target) < 1.3) {
+        if (this.horizontalDistanceTo(this.target) < 2.0) {
           if (this.door !== null && this.inside !== null) {
             // Открываем дверь и заходим.
             if (!this.doorOpened) {
@@ -195,6 +171,9 @@ export class Smurf extends Entity {
         this.enterTimer -= dt
         if (this.horizontalDistanceTo(this.target) < 0.7 || this.enterTimer <= 0) {
           this.state = 'hiding'
+          // Дневной визит короткий; ночью сидим до рассвета (таймер не мешает:
+          // выход всё равно требует «не ночь и не страшно»).
+          this.hideTimer = 2.4
           this.velocity.x = 0
           this.velocity.z = 0
           if (this.door !== null && this.doorOpened) {
@@ -207,7 +186,8 @@ export class Smurf extends Entity {
       case 'hiding':
         this.velocity.x = 0
         this.velocity.z = 0
-        if (!ctx.night && ctx.threat === null) {
+        this.hideTimer -= dt
+        if (this.hideTimer <= 0 && !ctx.night && ctx.threat === null) {
           if (this.door !== null && this.inside !== null) {
             ctx.setDoor(this.door.x, this.door.y, this.door.z, true)
             this.doorOpened = true
@@ -247,19 +227,19 @@ export class Smurf extends Entity {
     return this.horizontalDistanceTo(ctx.threat) < 12
   }
 
-  private startFleeing(ctx: SmurfContext): void {
+  /** Идти домой: с криком — спасаясь, молча — просто заглянуть в гости к себе. */
+  private startHome(cry: boolean): void {
     this.state = 'fleeing'
     this.doorOpened = false
     this.target.copy(this.home)
-    this.onSay?.(pick(NIGHT_CRIES))
-    void ctx
+    if (cry) this.onSay?.(pick(NIGHT_CRIES))
   }
 
   /**
    * Прогулки по всей деревне: цель выбирается из точек интереса (чужие крылечки, пруд,
    * площадь), а не из окрестностей своего дома, — деревня выглядит живой.
    */
-  private wander(dt: number, ctx: SmurfContext): void {
+  private wander(dt: number, world: World, ctx: SmurfContext): void {
     if (this.waitTimer > 0) {
       this.waitTimer -= dt
       this.velocity.x = 0
@@ -267,17 +247,36 @@ export class Smurf extends Entity {
       return
     }
 
-    if (this.horizontalDistanceTo(this.target) < 0.7) {
+    // Цель не даётся — выбираем новую, а не тараним стену до конца времён.
+    this.wanderTimeout -= dt
+    const needNewTarget = this.horizontalDistanceTo(this.target) < 0.7 || this.wanderTimeout <= 0
+
+    if (needNewTarget) {
       this.waitTimer = 1.2 + Math.random() * 2.6
+      this.wanderTimeout = 9
+
+      // Иногда — заглянуть домой через дверь: деревня выглядит живой,
+      // а игрок видит, что двери работают.
+      if (this.door !== null && this.inside !== null && Math.random() < 0.14) {
+        this.startHome(false)
+        return
+      }
+
       const pois = ctx.pois.length > 0 ? ctx.pois : [this.home]
       const poi = pois[Math.floor(Math.random() * pois.length)]
       const angle = Math.random() * Math.PI * 2
       const distance = 1 + Math.random() * (VILLAGE.wanderRadius * 0.6)
-      this.target.set(
-        poi.x + Math.cos(angle) * distance,
-        poi.y,
-        poi.z + Math.sin(angle) * distance,
-      )
+      const tx = poi.x + Math.cos(angle) * distance
+      const tz = poi.z + Math.sin(angle) * distance
+
+      // Цель внутри стены или дома не годится: ждём и в следующий раз бросаем кубик заново.
+      const ty = world.groundY(tx, tz)
+      if (world.isSolidAt(tx, ty, tz) || world.isSolidAt(tx, ty + 1, tz)) {
+        this.wanderTimeout = 0
+        return
+      }
+
+      this.target.set(tx, poi.y, tz)
       return
     }
 
@@ -294,16 +293,8 @@ export class Smurf extends Entity {
       return
     }
 
-    // В обходном манёвре направление повёрнуто на ~75° — так огибаются стены и берега.
-    if (this.detourTimer > 0) {
-      const angle = this.detourSign * 1.3
-      const cos = Math.cos(angle)
-      const sin = Math.sin(angle)
-      const rx = dx * cos - dz * sin
-      const rz = dx * sin + dz * cos
-      dx = rx
-      dz = rz
-    }
+    this.updateNav(dt, length)
+    ;[dx, dz] = this.steer(dx, dz)
 
     this.velocity.x = (dx / length) * speed
     this.velocity.z = (dz / length) * speed
