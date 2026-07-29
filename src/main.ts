@@ -36,9 +36,8 @@ const START_CARD = `
     <b>WASD</b><span>идти, <b>Shift</b> — бежать</span>
     <b>Space</b><span>прыжок</span>
     <b>ЛКМ</b><span>ломать блок или ударить</span>
-    <b>ПКМ</b><span>поставить блок</span>
+    <b>ПКМ</b><span>поставить блок; по двери — открыть или закрыть</span>
     <b>F</b><span>метнуть облачко (добывается из ночных зверюшек)</span>
-    <b>ПКМ</b><span>по двери — открыть или закрыть</span>
     <b>1–9</b><span>выбрать блок, колесо крутит все слоты</span>
     <b>Tab</b><span>панель ресурсов: что это и где взять</span>
     <b>F5</b><span>сменить вид: от первого лица ↔ от третьего (или <b>V</b>)</span>
@@ -85,6 +84,7 @@ class Game {
   private readonly fauna: Fauna
   private readonly night: NightManager
   private saveTimer = 0
+  private doorAuditTimer = 1
   /**
    * Разрешено ли писать сохранение при закрытии страницы. Сбрасывается кнопкой
    * «Начать заново»: без этого флага обработчик beforeunload успевает записать старое
@@ -187,6 +187,10 @@ class Game {
       })
       this.village.handleBlockBroken(x, y, z, block)
       this.audio.breakBlock()
+      // Первая добытая морковка — подсказка, как ей пользоваться.
+      if (block === Block.CarrotPlant) {
+        this.hud.toastOnce('carrot', 'Морковка! Возьми её в руку — зверюшки пойдут за тобой')
+      }
     }
 
     this.village.onSay = (text) => {
@@ -256,12 +260,6 @@ class Game {
       this.hud.toast(mode === 'first' ? 'Вид: от первого лица' : 'Вид: от третьего лица', 1600)
     }
     this.controls.onToggleResources = () => this.hud.toggleResources()
-  }
-
-  /** Имя и краткое описание того, что сейчас в руке. */
-  private showItemLabel(): void {
-    const def = blockDef(this.interact.activeBlock)
-    this.hud.showItemName(def.name, def.description)
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }
@@ -276,6 +274,12 @@ class Game {
     // Единая точка правды для дверных мешей: любое изменение блока может создать,
     // убрать или переключить дверь.
     this.interact.onBlockChanged = (x, y, z) => this.doors.onBlockChanged(x, y, z)
+  }
+
+  /** Имя и краткое описание того, что сейчас в руке. */
+  private showItemLabel(): void {
+    const def = blockDef(this.interact.activeBlock)
+    this.hud.showItemName(def.name, def.description)
   }
 
   private spawn(): void {
@@ -597,6 +601,13 @@ class Game {
     if (this.saveTimer <= 0) {
       this.saveTimer = 15
       saveGame(this.collectSave())
+    }
+
+    // Сверка дверных мешей с блоками: визуал никогда не должен врать про дверь.
+    this.doorAuditTimer -= dt
+    if (this.doorAuditTimer <= 0) {
+      this.doorAuditTimer = 1
+      this.doors.audit()
     }
   }
 

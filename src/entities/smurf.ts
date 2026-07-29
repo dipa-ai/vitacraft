@@ -89,6 +89,8 @@ export class Smurf extends Entity {
   private hideTimer = 0
   /** Неудачные попытки зайти в дверь подряд. */
   private enterAttempts = 0
+  /** Таймаут бегства к дому: без него смурфик, не находящий дороги, бежал бы до утра. */
+  private fleeTimer = 0
 
   onSay: ((text: string) => void) | null = null
   onGone: (() => void) | null = null
@@ -125,7 +127,6 @@ export class Smurf extends Entity {
       this.applyGravity(dt, world)
     }
 
-
     switch (this.state) {
       case 'arriving':
         this.walkTo(dt, VILLAGE.smurfSpeed * 1.25)
@@ -151,6 +152,12 @@ export class Smurf extends Entity {
 
       case 'fleeing':
         this.walkTo(dt, VILLAGE.smurfSpeed * 1.8)
+        this.fleeTimer -= dt
+        // Дорога к крылечку не находится — юркаем внутрь, а не бегаем в стену до утра.
+        if (this.fleeTimer <= 0 && this.inside !== null) {
+          this.squeezeInside(ctx)
+          break
+        }
         if (this.horizontalDistanceTo(this.target) < 2.0) {
           if (this.door !== null && this.inside !== null) {
             // Открываем дверь и заходим.
@@ -186,19 +193,12 @@ export class Smurf extends Entity {
             this.doorOpened = false
           }
         } else if (this.enterTimer <= 0) {
-          // Не зашли — пробуем заново с крылечка. Раньше здесь было «спрятаться»,
-          // и смурфик замирал столбиком снаружи у стены — это и видел игрок.
+          // Не зашли — пробуем заново с крылечка, а после трёх неудач юркаем внутрь.
           this.enterAttempts++
-          if (this.enterAttempts < 4) {
+          if (this.enterAttempts < 3) {
             this.startHome(false)
           } else {
-            // Совсем не выходит (дверь замурована?) — хотя бы не бросаем дверь открытой.
-            if (this.door !== null && this.doorOpened) {
-              ctx.setDoor(this.door.x, this.door.y, this.door.z, false)
-              this.doorOpened = false
-            }
-            this.state = 'hiding'
-            this.hideTimer = 4
+            this.squeezeInside(ctx)
           }
         }
         break
@@ -252,11 +252,30 @@ export class Smurf extends Entity {
   private startHome(cry: boolean): void {
     this.state = 'fleeing'
     this.doorOpened = false
+    this.fleeTimer = 10
     this.target.copy(this.home)
     if (cry) {
       this.enterAttempts = 0
       this.onSay?.(pick(NIGHT_CRIES))
     }
+  }
+
+  /**
+   * Гарантированный вход: смурфик «юркает» внутрь. Последняя защита от картины
+   * «стоит столбиком у стены всю ночь» — лучше маленький телепорт, чем застывший житель.
+   */
+  private squeezeInside(ctx: SmurfContext): void {
+    if (this.inside !== null) {
+      this.position.set(this.inside.x + 0.5, this.inside.y, this.inside.z + 0.5)
+      this.velocity.set(0, 0, 0)
+    }
+    if (this.door !== null && this.doorOpened) {
+      ctx.setDoor(this.door.x, this.door.y, this.door.z, false)
+      this.doorOpened = false
+    }
+    this.state = 'hiding'
+    this.hideTimer = 2.4
+    this.enterAttempts = 0
   }
 
   /**

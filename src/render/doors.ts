@@ -62,13 +62,33 @@ export class DoorVisuals {
 
     const open = id === Block.DoorOpen
     if (existing !== undefined) {
-      if (existing.open !== open) this.setOpen(existing, open)
-      return
+      if (existing.open === open) return
+      // Пересобираем целиком: ориентация угадывается по стенам, а стены могли
+      // достроить уже после установки двери — иначе распахнутое полотно уходит
+      // в толщу стены и открытая дверь выглядит закрытой.
+      this.remove(key)
     }
 
     const visual = this.build(x, y, z)
     this.setOpen(visual, open)
     this.doors.set(key, visual)
+  }
+
+  /**
+   * Страховочная сверка с блоками, раз в секунду из игрового цикла: если визуал
+   * и воксели разошлись (сломанная дверь с живой картинкой — худший случай:
+   * игрок думает, что заперт, а монстр проходит насквозь), картинка чинится сама.
+   */
+  audit(): void {
+    for (const key of [...this.doors.keys()]) {
+      const [x, y, z] = key.split(',').map(Number)
+      this.refreshCell(x, y, z)
+    }
+    for (const [key, id] of this.world.edits) {
+      if (!isDoor(id)) continue
+      const [x, y, z] = key.split(',').map(Number)
+      this.refreshCell(x, y, z)
+    }
   }
 
   private build(x: number, y: number, z: number): DoorVisual {
@@ -118,7 +138,7 @@ export class DoorVisuals {
   private setOpen(visual: DoorVisual, open: boolean): void {
     visual.open = open
     // Мгновенный поворот: анимация потребовала бы апдейта каждый кадр ради редкого события.
-    visual.hinge.rotation.y = open ? -Math.PI / 2 + 0.2 : 0
+    visual.hinge.rotation.y = open ? -1.85 : 0
   }
 
   private remove(key: string): void {

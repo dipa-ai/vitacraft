@@ -224,13 +224,16 @@ const DEFS: readonly BlockDef[] = [
     name: 'морковная грядка',
     solid: false,
     opaque: false,
-    color: BLOCK_COLORS.carrotLeaf,
+    // Бока оранжевые нарочно: зелёная грядка на зелёной траве неразличима,
+    // а искать её — часть квеста.
+    color: BLOCK_COLORS.carrot,
     topColor: BLOCK_COLORS.carrotLeaf,
-    bottomColor: BLOCK_COLORS.carrot,
-    height: 0.35,
+    height: 0.4,
     variation: 0.08,
     placeable: false,
     drops: { block: Block.Carrot, count: 2 },
+    description: 'Сломай — получишь морковки для приманки зверюшек.',
+    source: 'Растёт оранжевыми пятнами на лугах, чуть в стороне от деревни.',
   },
   {
     id: Block.Cloud,
@@ -316,10 +319,6 @@ export function isBed(id: Block): boolean {
   return id === Block.Bed || id === Block.BedHead || id === Block.BedFoot
 }
 
-export function isTransparentDrawn(id: Block): boolean {
-  return blockDef(id).transparent === true
-}
-
 /**
  * Блоки хотбара по порядку слотов. Цифры выбирают первые девять, колесо крутит все.
  * Морковка и облачко не ставятся — это предметы «в руке».
@@ -331,6 +330,7 @@ export const HOTBAR_BLOCKS: readonly Block[] = [
   Block.Pink,
   Block.Blue,
   Block.Yellow,
+  Block.Lavender,
   Block.Mint,
   Block.Glass,
   Block.Wood,
