@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VitaCraft — деревня смурфиков и Витрулян</title>
+    <style>
+      :root {
+        --cream: #fff8f0;
+        --ink: #4a3f55;
+        --pink: #ff8fa3;
+        --mint: #a8f0d8;
+        --lav: #d5b8ff;
+        --panel: rgba(255, 248, 240, 0.86);
+        --shadow: 0 6px 0 rgba(74, 63, 85, 0.14), 0 10px 24px rgba(74, 63, 85, 0.16);
+        font-family: ui-rounded, 'Nunito', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #cfe9fb;
+        color: var(--ink);
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      #game {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* Интерфейс живёт поверх канваса и не перехватывает мышь. */
+      #ui {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      /* --- Прицел --- */
+      #crosshair {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 22px;
+        height: 22px;
+        margin: -11px 0 0 -11px;
+        opacity: 0.85;
+        transition: transform 0.08s ease-out;
+      }
+
+      #crosshair::before,
+      #crosshair::after {
+        content: '';
+        position: absolute;
+        background: #fff;
+        border-radius: 2px;
+        box-shadow: 0 0 3px rgba(74, 63, 85, 0.7);
+      }
+
+      #crosshair::before {
+        left: 50%;
+        top: 3px;
+        width: 2px;
+        height: 16px;
+        margin-left: -1px;
+      }
+
+      #crosshair::after {
+        top: 50%;
+        left: 3px;
+        height: 2px;
+        width: 16px;
+        margin-top: -1px;
+      }
+
+      #crosshair.hit {
+        transform: scale(1.45);
+      }
+
+      /* --- Сердечки --- */
+      #hearts {
+        position: absolute;
+        left: 22px;
+        bottom: 92px;
+        display: flex;
+        gap: 5px;
+      }
+
+      .heart {
+        width: 22px;
+        height: 22px;
+        background: var(--pink);
+        clip-path: path(
+          'M11 20 C11 20 1 13.5 1 7.2 C1 3.6 3.7 1 7 1 C9 1 10.4 2.1 11 3.2 C11.6 2.1 13 1 15 1 C18.3 1 21 3.6 21 7.2 C21 13.5 11 20 11 20 Z'
+        );
+        filter: drop-shadow(0 2px 0 rgba(74, 63, 85, 0.22));
+        transition: transform 0.14s ease-out, background 0.14s;
+      }
+
+      .heart.empty {
+        background: rgba(255, 255, 255, 0.42);
+      }
+
+      .heart.pulse {
+        transform: scale(1.3);
+      }
+
+      /* --- Хотбар --- */
+      #hotbar {
+        position: absolute;
+        left: 50%;
+        bottom: 20px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        padding: 9px;
+        background: var(--panel);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .slot {
+        position: relative;
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.55);
+        border: 3px solid transparent;
+        display: grid;
+        place-items: center;
+        transition: transform 0.1s ease-out, border-color 0.1s;
+      }
+
+      .slot.active {
+        border-color: var(--ink);
+        transform: translateY(-7px) scale(1.06);
+      }
+
+      .slot .swatch {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.14), 0 2px 0 rgba(74, 63, 85, 0.18);
+      }
+
+      .slot .key {
+        position: absolute;
+        top: 2px;
+        left: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        opacity: 0.45;
+      }
+
+      .slot .count {
+        position: absolute;
+        bottom: 1px;
+        right: 5px;
+        font-size: 12px;
+        font-weight: 800;
+        text-shadow: 0 1px 0 #fff;
+      }
+
+      /* --- Трекер задания --- */
+      #quest {
+        position: absolute;
+        right: 22px;
+        top: 22px;
+        min-width: 220px;
+        padding: 14px 18px;
+        background: var(--panel);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        opacity: 0;
+        transform: translateY(-10px);
+        transition: opacity 0.3s, transform 0.3s;
+      }
+
+      #quest.show {
+        opacity: 1;
+        transform: none;
+      }
+
+      #quest .title {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        opacity: 0.55;
+      }
+
+      #quest .goal {
+        font-size: 17px;
+        font-weight: 800;
+        margin-top: 3px;
+      }
+
+      #quest .bar {
+        margin-top: 9px;
+        height: 10px;
+        border-radius: 6px;
+        background: rgba(74, 63, 85, 0.12);
+        overflow: hidden;
+      }
+
+      #quest .fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 6px;
+        background: linear-gradient(90deg, var(--mint), var(--pink));
+        transition: width 0.4s ease-out;
+      }
+
+      /* --- Полоса здоровья босса --- */
+      #bossbar {
+        position: absolute;
+        left: 50%;
+        top: 26px;
+        transform: translateX(-50%) translateY(-16px);
+        width: min(560px, 76vw);
+        padding: 12px 18px 14px;
+        background: var(--panel);
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+        text-align: center;
+        opacity: 0;
+        transition: opacity 0.4s, transform 0.4s;
+      }
+
+      #bossbar.show {
+        opacity: 1;
+        transform: translateX(-50%);
+      }
+
+      #bossbar .name {
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 0.02em;
+      }
+
+      #bossbar .phase {
+        font-size: 12px;
+        font-weight: 700;
+        opacity: 0.55;
+      }
+
+      #bossbar .bar {
+        margin-top: 8px;
+        height: 14px;
+        border-radius: 8px;
+        background: rgba(74, 63, 85, 0.14);
+        overflow: hidden;
+      }
+
+      #bossbar .fill {
+        height: 100%;
+        width: 100%;
+        border-radius: 8px;
+        background: linear-gradient(90deg, var(--lav), var(--pink));
+        transition: width 0.25s ease-out;
+      }
+
+      /* --- Реплики --- */
+      #toasts {
+        position: absolute;
+        left: 50%;
+        bottom: 100px;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .toast {
+        padding: 11px 20px;
+        background: var(--panel);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        font-size: 16px;
+        font-weight: 700;
+        max-width: 74vw;
+        text-align: center;
+        animation: pop 0.28s cubic-bezier(0.2, 1.5, 0.4, 1);
+      }
+
+      .toast.leaving {
+        animation: fade 0.4s forwards;
+      }
+
+      @keyframes pop {
+        from {
+          transform: scale(0.7) translateY(14px);
+          opacity: 0;
+        }
+      }
+
+      @keyframes fade {
+        to {
+          transform: translateY(-10px);
+          opacity: 0;
+        }
+      }
+
+      /* --- Полноэкранные экраны --- */
+      #overlay {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(207, 233, 251, 0.72);
+        backdrop-filter: blur(7px);
+        pointer-events: auto;
+        transition: opacity 0.35s;
+      }
+
+      #overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .card {
+        max-width: 560px;
+        padding: 34px 40px 38px;
+        background: var(--cream);
+        border-radius: 30px;
+        box-shadow: 0 10px 0 rgba(74, 63, 85, 0.13), 0 24px 60px rgba(74, 63, 85, 0.22);
+        text-align: center;
+      }
+
+      .card h1 {
+        margin: 0 0 6px;
+        font-size: 40px;
+        letter-spacing: -0.02em;
+      }
+
+      .card h1 .accent {
+        color: var(--pink);
+      }
+
+      .card p {
+        margin: 0 0 6px;
+        font-size: 16px;
+        line-height: 1.55;
+        opacity: 0.8;
+      }
+
+      .keys {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 7px 14px;
+        margin: 20px auto 24px;
+        text-align: left;
+        font-size: 15px;
+        width: fit-content;
+      }
+
+      .keys b {
+        display: inline-block;
+        min-width: 30px;
+        padding: 3px 9px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 0 rgba(74, 63, 85, 0.2);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      .btn {
+        display: inline-block;
+        padding: 15px 38px;
+        background: var(--pink);
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        font: inherit;
+        font-size: 19px;
+        font-weight: 900;
+        cursor: pointer;
+        box-shadow: 0 5px 0 #e06a80;
+        transition: transform 0.1s, box-shadow 0.1s;
+      }
+
+      .btn:active {
+        transform: translateY(4px);
+        box-shadow: 0 1px 0 #e06a80;
+      }
+
+      #loading {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #cfe9fb;
+        font-size: 19px;
+        font-weight: 800;
+        color: var(--ink);
+        z-index: 10;
+      }
+
+      #vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at center, transparent 52%, rgba(255, 80, 110, 0.55) 130%);
+        opacity: 0;
+        transition: opacity 0.16s;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="ui">
+      <div id="vignette"></div>
+      <div id="crosshair"></div>
+      <div id="hearts"></div>
+      <div id="hotbar"></div>
+
+      <div id="quest">
+        <div class="title">Испытание</div>
+        <div class="goal">—</div>
+        <div class="bar"><div class="fill"></div></div>
+      </div>
+
+      <div id="bossbar">
+        <div class="name">Витрулян</div>
+        <div class="phase">Фаза 1</div>
+        <div class="bar"><div class="fill"></div></div>
+      </div>
+
+      <div id="toasts"></div>
+
+      <div id="overlay">
+        <div class="card" id="overlay-card"></div>
+      </div>
+    </div>
+
+    <div id="loading">Растим холмики…</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
