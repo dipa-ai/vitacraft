@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import logoUrl from '../vitacraft-logo.png?url'
+import logoUrl from './assets/vitacraft-logo.png?url'
 import { BOSS, CAMERA, DAY, NIGHT, PLAYER, WORLD } from './config/tuning'
 import { Boss } from './entities/boss'
 import { Combat } from './game/combat'
