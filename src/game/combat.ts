@@ -8,6 +8,7 @@ import type { EntityRayHit } from '../player/interact'
 import type { Player } from '../player/player'
 import type { Fx } from '../render/fx'
 import type { World } from '../world/world'
+import type { DamageSource } from './death'
 
 /**
  * The expanding shockwave from the boss's leap.
@@ -63,7 +64,7 @@ export class Combat {
   /** Extra targets (night enemies). The night manager supplies the list. */
   enemies: readonly Entity[] = []
 
-  onPlayerHurt: (() => void) | null = null
+  onPlayerHurt: ((source: DamageSource) => void) | null = null
   onBossHurt: ((amount: number) => void) | null = null
 
   constructor(
@@ -151,14 +152,14 @@ export class Combat {
   }
 
   /** Contact damage to the player — the boss dash and night-enemy bites. */
-  touchPlayer(amount: number): void {
-    this.hurtPlayer(amount)
+  touchPlayer(amount: number, source: DamageSource): void {
+    this.hurtPlayer(amount, source)
   }
 
-  private hurtPlayer(amount: number): void {
+  private hurtPlayer(amount: number, source: DamageSource): void {
     if (!this.player.takeDamage(amount)) return
     this.fx.addShake(0.35)
-    this.onPlayerHurt?.()
+    this.onPlayerHurt?.(source)
   }
 
   update(dt: number): void {
@@ -218,7 +219,7 @@ export class Combat {
           wave.hitPlayer = true
           // The key combat rule: the wave only catches a grounded player.
           if (this.player.onGround) {
-            this.hurtPlayer(wave.damage)
+            this.hurtPlayer(wave.damage, 'boss')
           }
         }
       }

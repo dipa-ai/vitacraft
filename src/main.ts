@@ -4,6 +4,7 @@ import { BOSS, CAMERA, DAY, NIGHT, PLAYER, WORLD } from './config/tuning'
 import { Boss } from './entities/boss'
 import { Combat } from './game/combat'
 import { Fauna } from './game/fauna'
+import { deathCard, type DamageSource } from './game/death'
 import { NightManager } from './game/night'
 import { Village } from './game/quest'
 import { Controls } from './player/controls'
@@ -79,10 +80,13 @@ const PAUSE_CARD = `
   <p>Мир никуда не денется — он ждёт.</p>
 `
 
-const DEATH_CARD = `
-  <h1>Ой…</h1>
-  <p>Витрулян оказался быстрее. Деревня цела — она тебя дождётся.</p>
-  <p>Подсказка: от ударной волны спасает <b>прыжок</b> в момент, когда она до тебя доходит.</p>
+const FULLSCREEN_HELP = `
+  <h1>Полный экран</h1>
+  <p>Этот браузер не разрешает странице самостоятельно скрыть адресную строку и кнопки.</p>
+  <p><b>iPhone / iPad:</b> нажми «Поделиться» → «На экран Домой», затем запускай
+  VitaCraft с новой иконки.</p>
+  <p><b>Android:</b> открой меню браузера → «Установить приложение» или
+  «Добавить на главный экран».</p>
 `
 
 const WIN_CARD = `
@@ -98,6 +102,9 @@ type Stage = 'village' | 'boss-incoming' | 'boss' | 'won'
 class Game {
   private readonly touchPreview =
     import.meta.env.DEV && new URLSearchParams(location.search).get('touch-preview') === '1'
+  private readonly fullscreenUnavailablePreview =
+    import.meta.env.DEV &&
+    new URLSearchParams(location.search).get('fullscreen-unavailable') === '1'
   private readonly touchMode =
     window.matchMedia('(pointer: coarse)').matches ||
     window.matchMedia('(any-pointer: coarse)').matches ||
@@ -160,7 +167,12 @@ class Game {
     // vertical, pitch around the camera's local axis.
     this.rig.camera.rotation.order = 'YXZ'
 
-    this.controls = new Controls(this.canvas, this.player, this.touchMode)
+    this.controls = new Controls(
+      this.canvas,
+      this.player,
+      this.touchMode,
+      this.fullscreenUnavailablePreview,
+    )
     if (this.touchMode) {
       this.portraitMode.addEventListener('change', () => this.handleOrientationChange())
     }
@@ -207,11 +219,11 @@ class Game {
     }
     this.interact.onMelee = () => this.audio.hitBoss()
     this.combat.onBossHurt = () => this.audio.hitBoss()
-    this.combat.onPlayerHurt = () => {
+    this.combat.onPlayerHurt = (source) => {
       this.audio.hurt()
       if (this.player.dead) {
         this.night.markPlayerDied()
-        this.showDeath()
+        this.showDeath(source)
       }
     }
   }
@@ -283,7 +295,7 @@ class Game {
       this.hud.toast('Рассвет! Зверюшки растаяли', 3500)
       if (survived) this.village.markNightSurvived()
     }
-    this.night.onBite = (damage) => this.combat.touchPlayer(damage)
+    this.night.onBite = (damage) => this.combat.touchPlayer(damage, 'night-creature')
     this.night.onCloudDrop = (count, at) => {
       this.interact.add(Block.Cloud, count)
       this.village.markCloudsGathered(count)
@@ -331,6 +343,7 @@ class Game {
     this.controls.onPause = () => {
       if (!this.paused) this.showPause()
     }
+    this.controls.onFullscreenUnavailable = () => this.showFullscreenHelp()
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }
@@ -513,11 +526,18 @@ class Game {
     button.addEventListener('click', () => this.resume())
   }
 
-  private showDeath(): void {
+  private showFullscreenHelp(): void {
+    this.paused = true
+    this.controls.release()
+    const [button] = this.hud.showCard(FULLSCREEN_HELP, ['Продолжить'])
+    button.addEventListener('click', () => this.resume())
+  }
+
+  private showDeath(source: DamageSource): void {
     this.paused = true
     this.controls.release()
     this.audio.defeat()
-    const [button] = this.hud.showCard(DEATH_CARD, ['Ещё раз'])
+    const [button] = this.hud.showCard(deathCard(source), ['Ещё раз'])
     button.addEventListener('click', () => {
       this.respawnAfterDeath()
       this.resume()
@@ -579,7 +599,7 @@ class Game {
       this.audio.bossSlam()
     }
     boss.onTouch = (damage) => {
-      this.combat.touchPlayer(damage)
+      this.combat.touchPlayer(damage, 'boss')
       this.audio.bossSpit()
     }
     boss.onTremor = (position) => {
@@ -636,7 +656,17 @@ class Game {
     this.controls.setTouchPanelOpen(false)
     // Browsers only allow starting an audio context from a click handler.
     this.audio.unlock()
-    if (enterFullscreen && !this.touchPreview) this.controls.requestFullscreen()
+    if (
+      enterFullscreen &&
+      !this.touchPreview &&
+      !this.controls.requestFullscreen()
+    ) {
+      this.hud.toastOnce(
+        'fullscreen-home-screen',
+        'Для игры без панелей нажми ⛶ и добавь VitaCraft на экран Домой',
+        6200,
+      )
+    }
     this.controls.requestLock()
   }
 

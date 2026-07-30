@@ -21,6 +21,10 @@ interface WebkitFullscreenElement extends HTMLElement {
   webkitRequestFullscreen?: () => Promise<void> | void
 }
 
+interface StandaloneNavigator extends Navigator {
+  standalone?: boolean
+}
+
 /** Converts a touch offset into bounded movement and a normalized knob position. */
 export function resolveTouchStick(dx: number, dy: number, radius: number): TouchStickVector {
   if (radius <= 0) {
@@ -75,6 +79,7 @@ export class Controls {
   onToggleResources: (() => void) | null = null
   onToggleHelp: (() => void) | null = null
   onPause: (() => void) | null = null
+  onFullscreenUnavailable: (() => void) | null = null
 
   private readonly keys = new Set<string>()
   private touchPanelOpen = false
@@ -97,6 +102,7 @@ export class Controls {
     private readonly canvas: HTMLCanvasElement,
     private readonly player: Player,
     touchMode = false,
+    private readonly fullscreenUnavailable = false,
   ) {
     this.touchMode = touchMode
     document.body.classList.toggle('touch-mode', touchMode)
@@ -124,15 +130,17 @@ export class Controls {
   }
 
   /** Enters browser fullscreen from the Play tap when the platform supports it. */
-  requestFullscreen(): void {
-    if (!this.touchMode || this.fullscreenElement !== null) return
+  requestFullscreen(): boolean {
+    if (!this.touchMode) return false
+    if (this.standaloneMode || this.fullscreenElement !== null) return true
     const root = document.documentElement as WebkitFullscreenElement
     const request = root.requestFullscreen?.bind(root) ?? root.webkitRequestFullscreen?.bind(root)
-    if (request === undefined) return
+    if (request === undefined) return false
     try {
-      void Promise.resolve(request()).catch(() => undefined)
+      void Promise.resolve(request()).catch(() => this.onFullscreenUnavailable?.())
+      return true
     } catch {
-      // iOS and embedded browsers may expose the API but reject it.
+      return false
     }
   }
 
@@ -293,7 +301,8 @@ export class Controls {
     this.bindTouchTap('touch-resources', () => this.onToggleResources?.(), true)
     this.bindTouchTap('touch-help', () => this.onToggleHelp?.(), true)
     this.fullscreenButtonEl = this.requireTouchEl('touch-fullscreen') as HTMLButtonElement
-    this.fullscreenButtonEl.classList.toggle('supported', this.fullscreenSupported)
+    // Browsers without the API still get a useful button with Home Screen instructions.
+    this.fullscreenButtonEl.classList.toggle('supported', !this.standaloneMode)
     this.bindTouchTap('touch-fullscreen', () => this.toggleFullscreen(), true)
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
     document.addEventListener('webkitfullscreenchange', this.onFullscreenChange)
@@ -320,6 +329,7 @@ export class Controls {
   }
 
   private get fullscreenSupported(): boolean {
+    if (this.fullscreenUnavailable) return false
     const root = document.documentElement as WebkitFullscreenElement
     return (
       typeof root.requestFullscreen === 'function' ||
@@ -327,9 +337,23 @@ export class Controls {
     )
   }
 
+  private get standaloneMode(): boolean {
+    const standaloneNavigator = navigator as StandaloneNavigator
+    return (
+      standaloneNavigator.standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches
+    )
+  }
+
   private toggleFullscreen(): void {
+    if (this.standaloneMode) return
     if (this.fullscreenElement === null) {
-      this.requestFullscreen()
+      if (!this.fullscreenSupported) {
+        this.onFullscreenUnavailable?.()
+        return
+      }
+      if (!this.requestFullscreen()) this.onFullscreenUnavailable?.()
       return
     }
 
@@ -348,7 +372,7 @@ export class Controls {
   private readonly onFullscreenChange = (): void => {
     const button = this.fullscreenButtonEl
     if (button === null) return
-    const active = this.fullscreenElement !== null
+    const active = this.standaloneMode || this.fullscreenElement !== null
     button.textContent = active ? '↙' : '⛶'
     button.setAttribute('aria-label', active ? 'Выйти из полного экрана' : 'На весь экран')
     button.setAttribute('aria-pressed', String(active))
