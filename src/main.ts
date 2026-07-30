@@ -68,6 +68,7 @@ const TOUCH_HELP_CONTENT = `
     <b>Хотбар</b><span>коснись слота; проведи по панели для прокрутки</span>
     <b>▦</b><span>панель ресурсов: что это и где взять</span>
     <b>◉</b><span>сменить вид от первого или третьего лица</span>
+    <b>⛶</b><span>включить или выключить полный экран</span>
     <b>Ⅱ</b><span>пауза</span>
   </div>
   <p class="help-footer">Нажми <b>?</b>, чтобы вернуться в игру</p>
@@ -95,7 +96,14 @@ const WIN_CARD = `
 type Stage = 'village' | 'boss-incoming' | 'boss' | 'won'
 
 class Game {
-  private readonly touchMode = window.matchMedia('(pointer: coarse)').matches
+  private readonly touchPreview =
+    import.meta.env.DEV && new URLSearchParams(location.search).get('touch-preview') === '1'
+  private readonly touchMode =
+    window.matchMedia('(pointer: coarse)').matches ||
+    window.matchMedia('(any-pointer: coarse)').matches ||
+    navigator.maxTouchPoints > 0 ||
+    this.touchPreview
+  private readonly portraitMode = window.matchMedia('(orientation: portrait)')
   private readonly canvas = document.getElementById('game') as HTMLCanvasElement
   private readonly rig = new SceneRig(this.canvas, this.touchMode)
   private readonly world = new World(
@@ -135,6 +143,7 @@ class Game {
   private dayTime = DAY.lengthSeconds * 0.15
   private elapsed = 0
   private paused = true
+  private orientationPaused = false
 
   private lastChunkX = Number.NaN
   private lastChunkZ = Number.NaN
@@ -152,6 +161,9 @@ class Game {
     this.rig.camera.rotation.order = 'YXZ'
 
     this.controls = new Controls(this.canvas, this.player, this.touchMode)
+    if (this.touchMode) {
+      this.portraitMode.addEventListener('change', () => this.handleOrientationChange())
+    }
     this.interact = new Interaction(this.world, this.player)
     this.village = new Village(this.world, this.rig.scene, this.player, this.fx)
     this.combat = new Combat(this.world, this.rig.scene, this.player, this.fx)
@@ -307,10 +319,14 @@ class Game {
       this.hud.toast(mode === 'first' ? 'Вид: от первого лица' : 'Вид: от третьего лица', 1600)
     }
     this.controls.onToggleResources = () => {
-      this.controls.setTouchPanelOpen(this.hud.toggleResources())
+      const open = this.hud.toggleResources()
+      this.controls.setTouchPanelOpen(open)
+      if (this.touchMode) this.paused = open
     }
     this.controls.onToggleHelp = () => {
-      this.controls.setTouchPanelOpen(this.hud.toggleHelp())
+      const open = this.hud.toggleHelp()
+      this.controls.setTouchPanelOpen(open)
+      if (this.touchMode) this.paused = open
     }
     this.controls.onPause = () => {
       if (!this.paused) this.showPause()
@@ -329,6 +345,24 @@ class Game {
     // Single source of truth for door meshes: any block change may create,
     // remove or toggle a door.
     this.interact.onBlockChanged = (x, y, z) => this.doors.onBlockChanged(x, y, z)
+  }
+
+  /** Stops the simulation while a phone is being rotated back to landscape. */
+  private handleOrientationChange(): void {
+    if (this.portraitMode.matches) {
+      if (!this.paused) {
+        this.orientationPaused = true
+        this.paused = true
+        this.controls.release()
+      }
+      return
+    }
+
+    if (this.orientationPaused) {
+      this.orientationPaused = false
+      this.paused = false
+      this.controls.requestLock()
+    }
   }
 
   /** Name and short description of whatever is currently held. */
@@ -462,7 +496,7 @@ class Game {
     const hasSave = this.hasStoredSave
     const labels = hasSave ? ['Играть', 'Начать заново'] : ['Играть']
     const [play, reset] = this.hud.showCard(START_CARD, labels, 'start-card')
-    play.addEventListener('click', () => this.resume())
+    play.addEventListener('click', () => this.resume(true))
     reset?.addEventListener('click', () => {
       // Order matters: forbid save-on-exit first, then clear and reload.
       this.saveOnExit = false
@@ -596,12 +630,13 @@ class Game {
     this.showWin()
   }
 
-  private resume(): void {
+  private resume(enterFullscreen = false): void {
     this.hud.hideCard()
     this.paused = false
     this.controls.setTouchPanelOpen(false)
     // Browsers only allow starting an audio context from a click handler.
     this.audio.unlock()
+    if (enterFullscreen && !this.touchPreview) this.controls.requestFullscreen()
     this.controls.requestLock()
   }
 

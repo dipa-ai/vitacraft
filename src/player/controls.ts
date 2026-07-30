@@ -12,6 +12,15 @@ export interface TouchStickVector {
   visualY: number
 }
 
+interface WebkitFullscreenDocument extends Document {
+  webkitExitFullscreen?: () => Promise<void> | void
+  webkitFullscreenElement?: Element | null
+}
+
+interface WebkitFullscreenElement extends HTMLElement {
+  webkitRequestFullscreen?: () => Promise<void> | void
+}
+
 /** Converts a touch offset into bounded movement and a normalized knob position. */
 export function resolveTouchStick(dx: number, dy: number, radius: number): TouchStickVector {
   if (radius <= 0) {
@@ -81,6 +90,7 @@ export class Controls {
   private lookY = 0
   private moveBaseEl: HTMLElement | null = null
   private moveKnobEl: HTMLElement | null = null
+  private fullscreenButtonEl: HTMLButtonElement | null = null
   private readonly touchDisposers: (() => void)[] = []
 
   constructor(
@@ -111,6 +121,19 @@ export class Controls {
       return
     }
     void this.canvas.requestPointerLock()
+  }
+
+  /** Enters browser fullscreen from the Play tap when the platform supports it. */
+  requestFullscreen(): void {
+    if (!this.touchMode || this.fullscreenElement !== null) return
+    const root = document.documentElement as WebkitFullscreenElement
+    const request = root.requestFullscreen?.bind(root) ?? root.webkitRequestFullscreen?.bind(root)
+    if (request === undefined) return
+    try {
+      void Promise.resolve(request()).catch(() => undefined)
+    } catch {
+      // iOS and embedded browsers may expose the API but reject it.
+    }
   }
 
   /** Stops gameplay input before a pause/death/win card is shown. */
@@ -269,6 +292,18 @@ export class Controls {
     this.bindTouchTap('touch-camera', () => this.toggleCamera())
     this.bindTouchTap('touch-resources', () => this.onToggleResources?.(), true)
     this.bindTouchTap('touch-help', () => this.onToggleHelp?.(), true)
+    this.fullscreenButtonEl = this.requireTouchEl('touch-fullscreen') as HTMLButtonElement
+    this.fullscreenButtonEl.classList.toggle('supported', this.fullscreenSupported)
+    this.bindTouchTap('touch-fullscreen', () => this.toggleFullscreen(), true)
+    document.addEventListener('fullscreenchange', this.onFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', this.onFullscreenChange)
+    this.touchDisposers.push(() =>
+      document.removeEventListener('fullscreenchange', this.onFullscreenChange),
+    )
+    this.touchDisposers.push(() =>
+      document.removeEventListener('webkitfullscreenchange', this.onFullscreenChange),
+    )
+    this.onFullscreenChange()
     this.bindTouchTap(
       'touch-pause',
       () => {
@@ -277,6 +312,46 @@ export class Controls {
       },
       true,
     )
+  }
+
+  private get fullscreenElement(): Element | null {
+    const fullscreenDocument = document as WebkitFullscreenDocument
+    return document.fullscreenElement ?? fullscreenDocument.webkitFullscreenElement ?? null
+  }
+
+  private get fullscreenSupported(): boolean {
+    const root = document.documentElement as WebkitFullscreenElement
+    return (
+      typeof root.requestFullscreen === 'function' ||
+      typeof root.webkitRequestFullscreen === 'function'
+    )
+  }
+
+  private toggleFullscreen(): void {
+    if (this.fullscreenElement === null) {
+      this.requestFullscreen()
+      return
+    }
+
+    const fullscreenDocument = document as WebkitFullscreenDocument
+    const exit =
+      document.exitFullscreen?.bind(document) ??
+      fullscreenDocument.webkitExitFullscreen?.bind(fullscreenDocument)
+    if (exit === undefined) return
+    try {
+      void Promise.resolve(exit()).catch(() => undefined)
+    } catch {
+      // Ignore browser-specific fullscreen failures; gameplay remains usable.
+    }
+  }
+
+  private readonly onFullscreenChange = (): void => {
+    const button = this.fullscreenButtonEl
+    if (button === null) return
+    const active = this.fullscreenElement !== null
+    button.textContent = active ? '↙' : '⛶'
+    button.setAttribute('aria-label', active ? 'Выйти из полного экрана' : 'На весь экран')
+    button.setAttribute('aria-pressed', String(active))
   }
 
   private bindTouchTap(id: string, action: () => void, allowWhilePanel = false): void {
