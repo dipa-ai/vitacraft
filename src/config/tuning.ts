@@ -8,6 +8,8 @@ export const WORLD = {
   /** Chunk streaming radius around the player. Matched to the fog density in scene.ts:
    * fog must hide the edge of the loaded area, or the world visibly ends. */
   viewRadius: 6,
+  /** Smaller touch-device radius keeps generation and mesh count reasonable on phones. */
+  mobileViewRadius: 4,
   seaLevel: 26,
   /** At most this many mesh rebuilds per frame — more causes hitches while building. */
   remeshPerFrame: 2,
@@ -56,6 +58,7 @@ export const CAMERA = {
   thirdPersonHeight: 0.6,
   thirdPersonMinDistance: 1.2,
   mouseSensitivity: 0.0022,
+  touchSensitivity: 0.004,
 } as const
 
 export const VILLAGE = {

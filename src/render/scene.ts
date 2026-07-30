@@ -68,9 +68,9 @@ export class SceneRig {
   private readonly tmpA = new THREE.Color()
   private readonly tmpB = new THREE.Color()
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, mobileMode = false) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobileMode ? 1.25 : 2))
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.shadowMap.enabled = true
     // Soft shadow edges are a key part of the cute look.
@@ -89,7 +89,7 @@ export class SceneRig {
 
     // Density is matched to WORLD.viewRadius: at the loaded-area border fog must
     // almost fully hide geometry, or the world's edge shows.
-    this.fog = new THREE.FogExp2(SKY.day.fog, 0.01)
+    this.fog = new THREE.FogExp2(SKY.day.fog, mobileMode ? 0.015 : 0.01)
     this.scene.fog = this.fog
 
     this.ambient = new THREE.AmbientLight(SKY.day.ambient, SKY.day.ambientIntensity)
@@ -104,7 +104,8 @@ export class SceneRig {
 
     this.sun = new THREE.DirectionalLight(SKY.day.sun, SKY.day.sunIntensity)
     this.sun.castShadow = true
-    this.sun.shadow.mapSize.set(2048, 2048)
+    const shadowMapSize = mobileMode ? 1024 : 2048
+    this.sun.shadow.mapSize.set(shadowMapSize, shadowMapSize)
     // A tight frustum around the player: sharper shadows than covering the whole world.
     const extent = 42
     this.sun.shadow.camera.left = -extent
@@ -156,6 +157,7 @@ export class SceneRig {
     // materials don't do that when rendering into an intermediate target.
     this.composer.addPass(new OutputPass())
     this.composer.setSize(window.innerWidth, window.innerHeight)
+    this.bloomEnabled = !mobileMode
 
     window.addEventListener('resize', this.onResize)
   }

@@ -3,6 +3,8 @@ import { ALL_BLOCKS, type Block, blockDef } from '../world/blocks'
 
 /** DOM overlay: hearts, hotbar, quests, speech toasts and full-screen cards. */
 export class Hud {
+  onSelectSlot: ((index: number) => void) | null = null
+
   private readonly heartsEl = requireEl('hearts')
   private readonly hotbarEl = requireEl('hotbar')
   private readonly crosshairEl = requireEl('crosshair')
@@ -141,9 +143,18 @@ export class Hud {
     this.slotEls = []
     blocks.forEach((block, index) => {
       const def = blockDef(block)
-      const slot = document.createElement('div')
+      const slot = document.createElement('button')
+      slot.type = 'button'
       slot.className = 'slot'
       slot.title = def.description !== undefined ? `${def.name} — ${def.description}` : def.name
+      slot.setAttribute('aria-label', def.name)
+      // Click fires after a tap but is cancelled by a horizontal drag, so swiping
+      // the mobile hotbar does not accidentally select the first touched slot.
+      slot.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.onSelectSlot?.(index)
+      })
 
       const key = document.createElement('span')
       key.className = 'key'

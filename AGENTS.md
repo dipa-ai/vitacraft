@@ -9,8 +9,9 @@ VitaCraft is a browser-based voxel game built with TypeScript, Three.js, and Vit
 - `player/`, `entities/`, and `game/` contain controls, actors, quests, combat, and simulation rules.
 - `render/` owns scene setup, models, effects, doors, and generated audio.
 - `ui/` contains the HUD and full-screen cards.
+- `assets/` contains bundled images such as the title logo.
 
-Tests are colocated with their modules as `*.test.ts`. The root `index.html` is the Vite entry page; production output goes to `dist/`. Graphics and sound are generated in code, so there is no external asset directory.
+Tests are colocated with their modules as `*.test.ts`. The root `index.html` is the Vite entry page; production output goes to `dist/`. Most graphics and sound are generated in code; imported image files belong in `src/assets/`.
 
 ## Build, Test, and Development Commands
 
@@ -33,4 +34,4 @@ Use Vitest with `describe`, `it`, and `expect`. Name tests after observable beha
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short, specific Russian subject lines describing the player-visible change. Keep each commit focused and use the same concise, sentence-style convention. Pull requests should summarize behavior changes, list verification commands, and note save-data or tuning impacts. Link relevant issues and include screenshots or a short capture for visible gameplay or UI changes.
+Recent commits use short, specific English subject lines describing the player-visible change. Keep each commit focused and use the same concise, sentence-style convention. Pull requests should summarize behavior changes, list verification commands, and note save-data or tuning impacts. Link relevant issues and include screenshots or a short capture for visible gameplay or UI changes.

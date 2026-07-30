@@ -4,13 +4,53 @@ import type { Player } from './player'
 
 export type CameraMode = 'first' | 'third'
 
+export interface TouchStickVector {
+  forward: number
+  right: number
+  run: boolean
+  visualX: number
+  visualY: number
+}
+
+/** Converts a touch offset into bounded movement and a normalized knob position. */
+export function resolveTouchStick(dx: number, dy: number, radius: number): TouchStickVector {
+  if (radius <= 0) {
+    return { forward: 0, right: 0, run: false, visualX: 0, visualY: 0 }
+  }
+
+  const distance = Math.hypot(dx, dy)
+  const scale = distance > radius ? radius / distance : 1
+  const visualX = (dx * scale) / radius
+  const visualY = (dy * scale) / radius
+  const magnitude = Math.min(1, distance / radius)
+
+  // A small dead zone keeps an untouched or slightly trembling thumb stationary.
+  if (magnitude < 0.08) {
+    return { forward: 0, right: 0, run: false, visualX: 0, visualY: 0 }
+  }
+
+  return {
+    forward: -visualY,
+    right: visualX,
+    run: magnitude > 0.86,
+    visualX,
+    visualY,
+  }
+}
+
+export function clampPitch(pitch: number): number {
+  const limit = Math.PI / 2 - 0.01
+  return Math.max(-limit, Math.min(limit, pitch))
+}
+
 /**
  * Input and pointer capture. Pointer lock stays on in both camera modes: switching
- * third person to drag-rotation makes controls feel broken. So third person is just
- * a camera offset and the mouse behaves identically.
+ * third person to drag-rotation makes desktop controls feel broken. Touch devices
+ * skip pointer lock and use a left stick plus right-side drag look.
  */
 export class Controls {
   readonly input: MoveInput = { forward: 0, right: 0, jump: false, run: false }
+  readonly touchMode: boolean
   cameraMode: CameraMode = 'first'
   locked = false
 
@@ -25,13 +65,32 @@ export class Controls {
   onUnlock: (() => void) | null = null
   onToggleResources: (() => void) | null = null
   onToggleHelp: (() => void) | null = null
+  onPause: (() => void) | null = null
 
   private readonly keys = new Set<string>()
+  private touchPanelOpen = false
+  private touchForward = 0
+  private touchRight = 0
+  private touchRun = false
+  private touchJump = false
+  private movePointerId: number | null = null
+  private lookPointerId: number | null = null
+  private attackPointerId: number | null = null
+  private jumpPointerId: number | null = null
+  private lookX = 0
+  private lookY = 0
+  private moveBaseEl: HTMLElement | null = null
+  private moveKnobEl: HTMLElement | null = null
+  private readonly touchDisposers: (() => void)[] = []
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly player: Player,
+    touchMode = false,
   ) {
+    this.touchMode = touchMode
+    document.body.classList.toggle('touch-mode', touchMode)
+
     document.addEventListener('keydown', this.onKeyDown)
     document.addEventListener('keyup', this.onKeyUp)
     document.addEventListener('pointerlockchange', this.onLockChange)
@@ -39,19 +98,50 @@ export class Controls {
     document.addEventListener('mousedown', this.onMouseDown)
     document.addEventListener('mouseup', this.onMouseUp)
     document.addEventListener('wheel', this.onWheel, { passive: false })
+    window.addEventListener('blur', this.onWindowBlur)
     // Otherwise RMB opens the context menu instead of placing a block.
     this.canvas.addEventListener('contextmenu', this.onContextMenu)
+
+    if (this.touchMode) this.bindTouchControls()
   }
 
   requestLock(): void {
+    if (this.touchMode) {
+      this.locked = true
+      return
+    }
     void this.canvas.requestPointerLock()
+  }
+
+  /** Stops gameplay input before a pause/death/win card is shown. */
+  release(): void {
+    if (this.touchMode) {
+      this.locked = false
+      this.touchPanelOpen = false
+      document.body.classList.remove('touch-panel-open')
+      this.resetTouchInput()
+      return
+    }
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock()
+  }
+
+  /** Touch help/resource panels are modal to gameplay but keep their toolbar usable. */
+  setTouchPanelOpen(open: boolean): void {
+    this.touchPanelOpen = this.touchMode && open
+    document.body.classList.toggle('touch-panel-open', this.touchPanelOpen)
+    if (this.touchPanelOpen) this.resetTouchInput()
   }
 
   private readonly onContextMenu = (event: Event): void => {
     event.preventDefault()
   }
 
+  private readonly onWindowBlur = (): void => {
+    this.resetTouchInput()
+  }
+
   private readonly onLockChange = (): void => {
+    if (this.touchMode) return
     this.locked = document.pointerLockElement === this.canvas
     if (!this.locked) {
       this.keys.clear()
@@ -62,21 +152,20 @@ export class Controls {
   }
 
   private readonly onMouseMove = (event: MouseEvent): void => {
-    if (!this.locked) return
+    if (this.touchMode || !this.locked) return
     this.player.yaw -= event.movementX * CAMERA.mouseSensitivity
     this.player.pitch -= event.movementY * CAMERA.mouseSensitivity
-    // Slightly under 90°, or the camera flips at the zenith.
-    const limit = Math.PI / 2 - 0.01
-    this.player.pitch = Math.max(-limit, Math.min(limit, this.player.pitch))
+    this.player.pitch = clampPitch(this.player.pitch)
   }
 
   private readonly onMouseDown = (event: MouseEvent): void => {
-    if (!this.locked) return
+    if (this.touchMode || !this.locked) return
     if (event.button === 0) this.attackHeld = true
     if (event.button === 2) this.onPlace?.()
   }
 
   private readonly onMouseUp = (event: MouseEvent): void => {
+    if (this.touchMode) return
     if (event.button === 0) this.attackHeld = false
   }
 
@@ -105,8 +194,7 @@ export class Controls {
     if (event.code === 'F5' || event.code === 'KeyV') {
       event.preventDefault()
       if (event.repeat) return
-      this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first'
-      this.onCameraToggle?.(this.cameraMode)
+      this.toggleCamera()
       return
     }
 
@@ -132,12 +220,210 @@ export class Controls {
     this.syncInput()
   }
 
+  private toggleCamera(): void {
+    this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first'
+    this.onCameraToggle?.(this.cameraMode)
+  }
+
   private syncInput(): void {
     const held = (...codes: string[]): boolean => codes.some((code) => this.keys.has(code))
-    this.input.forward = (held('KeyW', 'ArrowUp') ? 1 : 0) - (held('KeyS', 'ArrowDown') ? 1 : 0)
-    this.input.right = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0)
-    this.input.jump = held('Space')
-    this.input.run = held('ShiftLeft', 'ShiftRight')
+    const keyForward =
+      (held('KeyW', 'ArrowUp') ? 1 : 0) - (held('KeyS', 'ArrowDown') ? 1 : 0)
+    const keyRight =
+      (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0)
+    this.input.forward = Math.max(-1, Math.min(1, keyForward + this.touchForward))
+    this.input.right = Math.max(-1, Math.min(1, keyRight + this.touchRight))
+    this.input.jump = held('Space') || this.touchJump
+    this.input.run = held('ShiftLeft', 'ShiftRight') || this.touchRun
+  }
+
+  private bindTouchControls(): void {
+    const controls = this.requireTouchEl('mobile-controls')
+    controls.setAttribute('aria-hidden', 'false')
+    const moveZone = this.requireTouchEl('touch-stick')
+    this.moveBaseEl = this.requireTouchEl('touch-stick-base')
+    this.moveKnobEl = this.requireTouchEl('touch-stick-knob')
+    const lookZone = this.requireTouchEl('touch-look')
+    const attack = this.requireTouchEl('touch-attack')
+    const jump = this.requireTouchEl('touch-jump')
+
+    this.listenTouch(moveZone, 'pointerdown', this.onMovePointerDown)
+    this.listenTouch(moveZone, 'pointermove', this.onMovePointerMove)
+    this.listenTouch(moveZone, 'pointerup', this.onMovePointerEnd)
+    this.listenTouch(moveZone, 'pointercancel', this.onMovePointerEnd)
+
+    this.listenTouch(lookZone, 'pointerdown', this.onLookPointerDown)
+    this.listenTouch(lookZone, 'pointermove', this.onLookPointerMove)
+    this.listenTouch(lookZone, 'pointerup', this.onLookPointerEnd)
+    this.listenTouch(lookZone, 'pointercancel', this.onLookPointerEnd)
+
+    this.listenTouch(attack, 'pointerdown', this.onAttackPointerDown)
+    this.listenTouch(attack, 'pointerup', this.onAttackPointerEnd)
+    this.listenTouch(attack, 'pointercancel', this.onAttackPointerEnd)
+    this.listenTouch(jump, 'pointerdown', this.onJumpPointerDown)
+    this.listenTouch(jump, 'pointerup', this.onJumpPointerEnd)
+    this.listenTouch(jump, 'pointercancel', this.onJumpPointerEnd)
+
+    this.bindTouchTap('touch-place', () => this.onPlace?.())
+    this.bindTouchTap('touch-throw', () => this.onThrow?.())
+    this.bindTouchTap('touch-camera', () => this.toggleCamera())
+    this.bindTouchTap('touch-resources', () => this.onToggleResources?.(), true)
+    this.bindTouchTap('touch-help', () => this.onToggleHelp?.(), true)
+    this.bindTouchTap(
+      'touch-pause',
+      () => {
+        this.release()
+        this.onPause?.()
+      },
+      true,
+    )
+  }
+
+  private bindTouchTap(id: string, action: () => void, allowWhilePanel = false): void {
+    const element = this.requireTouchEl(id)
+    this.listenTouch(element, 'pointerdown', (event) => {
+      if (!this.canUseTouch(allowWhilePanel)) return
+      event.preventDefault()
+      event.stopPropagation()
+      action()
+    })
+  }
+
+  private readonly onMovePointerDown = (event: PointerEvent): void => {
+    if (!this.canUseTouch() || this.movePointerId !== null) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.movePointerId = event.pointerId
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+    this.updateTouchMove(event)
+  }
+
+  private readonly onMovePointerMove = (event: PointerEvent): void => {
+    if (event.pointerId !== this.movePointerId) return
+    event.preventDefault()
+    this.updateTouchMove(event)
+  }
+
+  private readonly onMovePointerEnd = (event: PointerEvent): void => {
+    if (event.pointerId !== this.movePointerId) return
+    event.preventDefault()
+    this.movePointerId = null
+    this.touchForward = 0
+    this.touchRight = 0
+    this.touchRun = false
+    this.moveKnobEl?.style.removeProperty('transform')
+    this.syncInput()
+  }
+
+  private updateTouchMove(event: PointerEvent): void {
+    const base = this.moveBaseEl
+    const knob = this.moveKnobEl
+    if (base === null || knob === null) return
+    const rect = base.getBoundingClientRect()
+    const dx = event.clientX - (rect.left + rect.width / 2)
+    const dy = event.clientY - (rect.top + rect.height / 2)
+    const vector = resolveTouchStick(dx, dy, rect.width * 0.5)
+    this.touchForward = vector.forward
+    this.touchRight = vector.right
+    this.touchRun = vector.run
+    const knobTravel = rect.width * 0.27
+    knob.style.transform = `translate(${vector.visualX * knobTravel}px, ${vector.visualY * knobTravel}px)`
+    this.syncInput()
+  }
+
+  private readonly onLookPointerDown = (event: PointerEvent): void => {
+    if (!this.canUseTouch() || this.lookPointerId !== null) return
+    event.preventDefault()
+    this.lookPointerId = event.pointerId
+    this.lookX = event.clientX
+    this.lookY = event.clientY
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  }
+
+  private readonly onLookPointerMove = (event: PointerEvent): void => {
+    if (event.pointerId !== this.lookPointerId) return
+    event.preventDefault()
+    const dx = event.clientX - this.lookX
+    const dy = event.clientY - this.lookY
+    this.lookX = event.clientX
+    this.lookY = event.clientY
+    this.player.yaw -= dx * CAMERA.touchSensitivity
+    this.player.pitch = clampPitch(this.player.pitch - dy * CAMERA.touchSensitivity)
+  }
+
+  private readonly onLookPointerEnd = (event: PointerEvent): void => {
+    if (event.pointerId !== this.lookPointerId) return
+    event.preventDefault()
+    this.lookPointerId = null
+  }
+
+  private readonly onAttackPointerDown = (event: PointerEvent): void => {
+    if (!this.canUseTouch() || this.attackPointerId !== null) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.attackPointerId = event.pointerId
+    this.attackHeld = true
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  }
+
+  private readonly onAttackPointerEnd = (event: PointerEvent): void => {
+    if (event.pointerId !== this.attackPointerId) return
+    event.preventDefault()
+    this.attackPointerId = null
+    this.attackHeld = false
+  }
+
+  private readonly onJumpPointerDown = (event: PointerEvent): void => {
+    if (!this.canUseTouch() || this.jumpPointerId !== null) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.jumpPointerId = event.pointerId
+    this.touchJump = true
+    this.syncInput()
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  }
+
+  private readonly onJumpPointerEnd = (event: PointerEvent): void => {
+    if (event.pointerId !== this.jumpPointerId) return
+    event.preventDefault()
+    this.jumpPointerId = null
+    this.touchJump = false
+    this.syncInput()
+  }
+
+  private canUseTouch(allowWhilePanel = false): boolean {
+    return this.touchMode && this.locked && (allowWhilePanel || !this.touchPanelOpen)
+  }
+
+  private resetTouchInput(): void {
+    this.keys.clear()
+    this.movePointerId = null
+    this.lookPointerId = null
+    this.attackPointerId = null
+    this.jumpPointerId = null
+    this.touchForward = 0
+    this.touchRight = 0
+    this.touchRun = false
+    this.touchJump = false
+    this.attackHeld = false
+    this.moveKnobEl?.style.removeProperty('transform')
+    this.syncInput()
+  }
+
+  private requireTouchEl(id: string): HTMLElement {
+    const element = document.getElementById(id)
+    if (element === null) throw new Error(`Missing touch control #${id}`)
+    return element
+  }
+
+  private listenTouch(
+    target: EventTarget,
+    type: string,
+    handler: (event: PointerEvent) => void,
+  ): void {
+    const listener = handler as EventListener
+    target.addEventListener(type, listener, { passive: false })
+    this.touchDisposers.push(() => target.removeEventListener(type, listener))
   }
 
   dispose(): void {
@@ -148,6 +434,9 @@ export class Controls {
     document.removeEventListener('mousedown', this.onMouseDown)
     document.removeEventListener('mouseup', this.onMouseUp)
     document.removeEventListener('wheel', this.onWheel)
+    window.removeEventListener('blur', this.onWindowBlur)
     this.canvas.removeEventListener('contextmenu', this.onContextMenu)
+    for (const dispose of this.touchDisposers) dispose()
+    document.body.classList.remove('touch-mode', 'touch-panel-open')
   }
 }

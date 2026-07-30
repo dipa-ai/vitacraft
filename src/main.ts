@@ -35,7 +35,7 @@ const START_CARD = `
   </div>
 `
 
-const HELP_CONTENT = `
+const DESKTOP_HELP_CONTENT = `
   <h2>Управление</h2>
   <p>Мягкий воксельный мир, деревня для смурфиков, ночи с тёмными зверюшками
   и один очень большой рыжий кролик.</p>
@@ -52,6 +52,25 @@ const HELP_CONTENT = `
     <b>Esc</b><span>пауза</span>
   </div>
   <p class="help-footer">Нажми <b>Q</b>, чтобы вернуться в игру</p>
+`
+
+const TOUCH_HELP_CONTENT = `
+  <h2>Управление на телефоне</h2>
+  <p>Мягкий воксельный мир, деревня для смурфиков, ночи с тёмными зверюшками
+  и один очень большой рыжий кролик.</p>
+  <div class="keys">
+    <b>Левый стик</b><span>идти; отклони до края, чтобы бежать</span>
+    <b>Свайп справа</b><span>поворачивать камеру</span>
+    <b>↑</b><span>прыжок</span>
+    <b>⛏</b><span>удерживать, чтобы ломать блок или атаковать</span>
+    <b>＋</b><span>поставить блок; по двери — открыть или закрыть</span>
+    <b>☁</b><span>метнуть облачко</span>
+    <b>Хотбар</b><span>коснись слота; проведи по панели для прокрутки</span>
+    <b>▦</b><span>панель ресурсов: что это и где взять</span>
+    <b>◉</b><span>сменить вид от первого или третьего лица</span>
+    <b>Ⅱ</b><span>пауза</span>
+  </div>
+  <p class="help-footer">Нажми <b>?</b>, чтобы вернуться в игру</p>
 `
 
 const PAUSE_CARD = `
@@ -76,9 +95,13 @@ const WIN_CARD = `
 type Stage = 'village' | 'boss-incoming' | 'boss' | 'won'
 
 class Game {
+  private readonly touchMode = window.matchMedia('(pointer: coarse)').matches
   private readonly canvas = document.getElementById('game') as HTMLCanvasElement
-  private readonly rig = new SceneRig(this.canvas)
-  private readonly world = new World()
+  private readonly rig = new SceneRig(this.canvas, this.touchMode)
+  private readonly world = new World(
+    WORLD.seed,
+    this.touchMode ? WORLD.mobileViewRadius : WORLD.viewRadius,
+  )
   private readonly player = new Player()
   private readonly hud = new Hud()
   private readonly controls: Controls
@@ -128,7 +151,7 @@ class Game {
     // vertical, pitch around the camera's local axis.
     this.rig.camera.rotation.order = 'YXZ'
 
-    this.controls = new Controls(this.canvas, this.player)
+    this.controls = new Controls(this.canvas, this.player, this.touchMode)
     this.interact = new Interaction(this.world, this.player)
     this.village = new Village(this.world, this.rig.scene, this.player, this.fx)
     this.combat = new Combat(this.world, this.rig.scene, this.player, this.fx)
@@ -141,8 +164,11 @@ class Game {
     this.playerModel.group.visible = false
 
     this.hud.buildHotbar(HOTBAR_BLOCKS)
-    this.hud.setHelpContent(HELP_CONTENT)
+    this.hud.setHelpContent(this.touchMode ? TOUCH_HELP_CONTENT : DESKTOP_HELP_CONTENT)
     this.wireControls()
+    this.hud.onSelectSlot = (index) => {
+      if (this.touchMode) this.controls.onSelectSlot?.(index)
+    }
     this.wireVillage()
     this.wireCombat()
     this.wireNight()
@@ -280,8 +306,15 @@ class Game {
     this.controls.onCameraToggle = (mode) => {
       this.hud.toast(mode === 'first' ? 'Вид: от первого лица' : 'Вид: от третьего лица', 1600)
     }
-    this.controls.onToggleResources = () => this.hud.toggleResources()
-    this.controls.onToggleHelp = () => this.hud.toggleHelp()
+    this.controls.onToggleResources = () => {
+      this.controls.setTouchPanelOpen(this.hud.toggleResources())
+    }
+    this.controls.onToggleHelp = () => {
+      this.controls.setTouchPanelOpen(this.hud.toggleHelp())
+    }
+    this.controls.onPause = () => {
+      if (!this.paused) this.showPause()
+    }
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }
@@ -415,9 +448,12 @@ class Game {
     document.getElementById('loading')?.remove()
     this.showStart()
     // Save on tab close too, not only on the timer.
-    window.addEventListener('beforeunload', () => {
+    const saveBeforeExit = (): void => {
       if (this.saveOnExit) saveGame(this.collectSave())
-    })
+    }
+    window.addEventListener('beforeunload', saveBeforeExit)
+    // Mobile browsers often skip beforeunload when a tab is backgrounded or discarded.
+    window.addEventListener('pagehide', saveBeforeExit)
     this.loop()
   }
 
@@ -437,6 +473,7 @@ class Game {
 
   private showPause(): void {
     this.paused = true
+    this.controls.release()
     saveGame(this.collectSave())
     const [button] = this.hud.showCard(PAUSE_CARD, ['Продолжить'])
     button.addEventListener('click', () => this.resume())
@@ -444,7 +481,7 @@ class Game {
 
   private showDeath(): void {
     this.paused = true
-    document.exitPointerLock()
+    this.controls.release()
     this.audio.defeat()
     const [button] = this.hud.showCard(DEATH_CARD, ['Ещё раз'])
     button.addEventListener('click', () => {
@@ -455,7 +492,7 @@ class Game {
 
   private showWin(): void {
     this.paused = true
-    document.exitPointerLock()
+    this.controls.release()
     this.hud.setBoss(false)
     this.audio.victory()
     saveGame(this.collectSave())
@@ -562,6 +599,7 @@ class Game {
   private resume(): void {
     this.hud.hideCard()
     this.paused = false
+    this.controls.setTouchPanelOpen(false)
     // Browsers only allow starting an audio context from a click handler.
     this.audio.unlock()
     this.controls.requestLock()

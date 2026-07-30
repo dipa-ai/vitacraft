@@ -2,7 +2,8 @@
 
 A soft voxel game in the browser: build a village for smurfs, bring animals home,
 dig a pond, survive nights with dark creatures — then defeat Vitruylan, the big
-ginger rabbit. No external assets: all graphics and sound are generated in code.
+ginger rabbit. Game graphics and sound are generated in code; the title logo is
+the only bundled image asset.
 
 ## Run
 
@@ -33,6 +34,11 @@ npm test           # unit tests (vitest)
 | `Q` | show or hide the controls help |
 | `F5` or `V` | toggle view: first person ↔ third person |
 | `Esc` | pause |
+
+On touch devices, use the left stick to move and drag the right side of the
+screen to look. The four action buttons jump, break/attack, place/use, and throw
+a cloud. Tap or swipe the hotbar to select items; the top-right buttons open
+pause, camera, resources, and controls.
 
 ## How to play
 
@@ -66,6 +72,7 @@ saved to localStorage automatically; the start screen has “Начать зан
 
 ```
 src/
+├── assets/        bundled image assets
 ├── config/        palette and gameplay numbers — tweak look and balance here
 ├── world/         blocks, chunks, mesher, terrain, water, voxel raycast
 ├── player/        physics, input, break/place, paired blocks, bucket

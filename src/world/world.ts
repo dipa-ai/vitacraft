@@ -6,7 +6,7 @@ import { COLOR_COMPONENTS, meshChunk, type MeshData, type VoxelReader } from './
 import { TerrainGenerator } from './terrain'
 import { WaterSim, type WaterWorld } from './water'
 
-const { chunkSizeX, chunkSizeY, chunkSizeZ, viewRadius, remeshPerFrame } = WORLD
+const { chunkSizeX, chunkSizeY, chunkSizeZ, remeshPerFrame } = WORLD
 
 /** World coordinate to chunk coordinate. */
 export function toChunkCoord(v: number): number {
@@ -19,6 +19,7 @@ export class World {
 
   private readonly chunks = new Map<string, Chunk>()
   private readonly remeshQueue: Chunk[] = []
+  private readonly viewRadius: number
   private readonly opaqueMaterial: THREE.MeshLambertMaterial
   private readonly transparentMaterial: THREE.MeshLambertMaterial
 
@@ -32,8 +33,9 @@ export class World {
     setFluid: (x, y, z, id) => this.setVoxel(x, y, z, id, false),
   }
 
-  constructor(seed: number = WORLD.seed) {
+  constructor(seed: number = WORLD.seed, viewRadius: number = WORLD.viewRadius) {
     this.terrain = new TerrainGenerator(seed)
+    this.viewRadius = Math.max(1, Math.floor(viewRadius))
     this.group.name = 'world'
 
     // flatShading keeps voxel faces crisp; vertexColors carry block color and AO.
@@ -115,7 +117,7 @@ export class World {
   ensureAround(worldX: number, worldZ: number): void {
     const ccx = toChunkCoord(worldX)
     const ccz = toChunkCoord(worldZ)
-    const genRadius = viewRadius + 1
+    const genRadius = this.viewRadius + 1
 
     for (let dz = -genRadius; dz <= genRadius; dz++) {
       for (let dx = -genRadius; dx <= genRadius; dx++) {
@@ -125,8 +127,8 @@ export class World {
 
     // Mesh near chunks first so the world pops in around the player immediately.
     const pending: { chunk: Chunk; dist: number }[] = []
-    for (let dz = -viewRadius; dz <= viewRadius; dz++) {
-      for (let dx = -viewRadius; dx <= viewRadius; dx++) {
+    for (let dz = -this.viewRadius; dz <= this.viewRadius; dz++) {
+      for (let dx = -this.viewRadius; dx <= this.viewRadius; dx++) {
         const chunk = this.chunks.get(chunkKey(ccx + dx, ccz + dz))
         if (chunk !== undefined && chunk.dirty && !this.remeshQueue.includes(chunk)) {
           pending.push({ chunk, dist: dx * dx + dz * dz })
@@ -171,7 +173,7 @@ export class World {
 
   /** Unloads distant chunks so memory and mesh count don't grow forever. */
   private unloadFar(ccx: number, ccz: number): void {
-    const limit = viewRadius + 3
+    const limit = this.viewRadius + 3
     for (const [key, chunk] of this.chunks) {
       if (Math.abs(chunk.cx - ccx) <= limit && Math.abs(chunk.cz - ccz) <= limit) continue
       this.disposeMesh(chunk.opaqueMesh)
