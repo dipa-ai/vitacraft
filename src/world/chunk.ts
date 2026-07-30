@@ -5,12 +5,12 @@ import type { Block } from './blocks'
 const { chunkSizeX, chunkSizeY, chunkSizeZ } = WORLD
 const LAYER = chunkSizeX * chunkSizeZ
 
-/** Столбец чанка 16×64×16. Хранит только воксели, ничего не знает про рендер. */
+/** A 16×64×16 chunk column. Stores voxels only; knows nothing about rendering. */
 export class Chunk {
   readonly data = new Uint8Array(chunkSizeX * chunkSizeY * chunkSizeZ)
-  /** Меш устарел и его надо перестроить. */
+  /** The mesh is stale and needs a rebuild. */
   dirty = true
-  /** Данные сгенерированы террагеном. */
+  /** Data has been produced by the terrain generator. */
   generated = false
   opaqueMesh: THREE.Mesh | null = null
   transparentMesh: THREE.Mesh | null = null
@@ -24,7 +24,7 @@ export class Chunk {
     return y * LAYER + z * chunkSizeX + x
   }
 
-  /** Локальные координаты внутри чанка. Выход за границы — ответственность вызывающего. */
+  /** Chunk-local coordinates. Staying in bounds is the caller's responsibility. */
   get(x: number, y: number, z: number): Block {
     return this.data[y * LAYER + z * chunkSizeX + x] as Block
   }

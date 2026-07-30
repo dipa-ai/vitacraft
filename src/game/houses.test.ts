@@ -5,8 +5,8 @@ import type { VoxelReader } from '../world/mesher'
 import { validateRoom } from './houses'
 
 /**
- * Строит полый ящик со стенами из указанного блока и кроваткой внутри.
- * Внутренний объём: (size-2)³ клеток.
+ * Builds a hollow box with walls of the given block and a bed inside.
+ * Interior volume: (size-2)³ cells.
  */
 function box(
   size: number,
@@ -39,17 +39,17 @@ function box(
 }
 
 describe('validateRoom', () => {
-  it('принимает замкнутую комнату с кроваткой', () => {
+  it('accepts a sealed room with a bed', () => {
     const { reader, bed } = box(4)
     const result = validateRoom(reader, ...bed)
 
     expect(result.ok).toBe(true)
     expect(result.reason).toBeNull()
-    // Внутренний объём ящика 4×4×4 — это 2×2×2 = 8 клеток.
+    // A 4×4×4 box interior is 2×2×2 = 8 cells.
     expect(result.volume).toBe(8)
   })
 
-  it('отклоняет комнату без кроватки', () => {
+  it('rejects a room without a bed', () => {
     const { reader, bed } = box(5, Block.Pink, { bed: false })
     const result = validateRoom(reader, ...bed)
 
@@ -57,7 +57,7 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('no-bed')
   })
 
-  it('отклоняет дырку в крыше', () => {
+  it('rejects a hole in the roof', () => {
     const { reader, bed } = box(5, Block.Pink, { holeAt: [2, 4, 2] })
     const result = validateRoom(reader, ...bed)
 
@@ -65,7 +65,7 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
-  it('отклоняет дырку в стене', () => {
+  it('rejects a hole in a wall', () => {
     const { reader, bed } = box(5, Block.Pink, { holeAt: [0, 2, 2] })
     const result = validateRoom(reader, ...bed)
 
@@ -73,7 +73,7 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
-  it('отклоняет дырку в полу', () => {
+  it('rejects a hole in the floor', () => {
     const { reader, bed } = box(5, Block.Pink, { holeAt: [2, 0, 2] })
     const result = validateRoom(reader, ...bed)
 
@@ -81,15 +81,15 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
-  it('пропускает окна из стекла: стекло считается стеной', () => {
-    // Ящик целиком из стекла — это оранжерея, но всё же герметичный дом.
+  it('allows glass windows: glass counts as a wall', () => {
+    // A box entirely of glass is a greenhouse — yet still a sealed house.
     const { reader, bed } = box(4, Block.Glass)
     const result = validateRoom(reader, ...bed)
 
     expect(result.ok).toBe(true)
   })
 
-  it('не считает стеной воду', () => {
+  it('does not count water as a wall', () => {
     const { reader, bed } = box(5, Block.Water)
     const result = validateRoom(reader, ...bed)
 
@@ -97,8 +97,8 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
-  it('отклоняет слишком тесную комнату', () => {
-    // Ящик 3×3×3 даёт всего одну внутреннюю клетку.
+  it('rejects a room that is too cramped', () => {
+    // A 3×3×3 box yields just one interior cell.
     const cells = new Map<string, Block>()
     for (let x = 0; x < 3; x++) {
       for (let y = 0; y < 3; y++) {
@@ -116,7 +116,7 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('too-small')
   })
 
-  it('отклоняет кроватку в чистом поле', () => {
+  it('rejects a bed in an open field', () => {
     const reader: VoxelReader = (x, y, z) =>
       y === 0 ? Block.Grass : x === 5 && y === 1 && z === 5 ? Block.Bed : Block.Air
 
@@ -125,8 +125,8 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
-  it('отклоняет комнату с открытым проёмом-дверью', () => {
-    // Проём в два блока высотой — именно то, что игрок сделал бы дверью.
+  it('rejects a room with an open doorway gap', () => {
+    // A two-block-tall gap — exactly what a player would use as a door.
     const { reader, bed } = box(5, Block.Pink, { holeAt: [0, 1, 2] })
     const result = validateRoom(reader, ...bed)
 
@@ -134,8 +134,8 @@ describe('validateRoom', () => {
     expect(result.reason).toBe('leaks')
   })
 
-  it('отклоняет пещеру больше лимита, даже если она замкнута', () => {
-    // Огромная полость: считать её домом нельзя, и именно лимит это ловит.
+  it('rejects a cave beyond the budget even if sealed', () => {
+    // A huge cavity: it must not count as a house, and the budget catches that.
     const size = 12
     const cells = new Map<string, Block>()
     for (let x = 0; x < size; x++) {
@@ -150,16 +150,16 @@ describe('validateRoom', () => {
     cells.set('1,1,1', Block.Bed)
     const reader: VoxelReader = (x, y, z) => cells.get(`${x},${y},${z}`) ?? Block.Air
 
-    // Внутри 10³ = 1000 клеток, лимит меньше.
+    // 10³ = 1000 cells inside; the budget is smaller.
     expect(VILLAGE.floodFillBudget).toBeLessThan(1000)
     const result = validateRoom(reader, 1, 1, 1)
     expect(result.ok).toBe(false)
     expect(result.reason).toBe('leaks')
   })
 
-  it('комната с закрытой дверью — герметичный дом', () => {
+  it('a room with a closed door is a sealed house', () => {
     const { reader: base, bed } = box(5)
-    // Дверь в стене: две клетки по вертикали.
+    // A door in the wall: two vertical cells.
     const withDoor: VoxelReader = (x, y, z) => {
       if (x === 0 && z === 2 && (y === 1 || y === 2)) return Block.DoorClosed
       return base(x, y, z)
@@ -168,7 +168,7 @@ describe('validateRoom', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('открытая дверь тоже запечатывает: смурфик может выйти, а дом остаётся домом', () => {
+  it('an open door still seals: the smurf can leave and the house stays a house', () => {
     const { reader: base, bed } = box(5)
     const withDoor: VoxelReader = (x, y, z) => {
       if (x === 0 && z === 2 && (y === 1 || y === 2)) return Block.DoorOpen
@@ -178,7 +178,7 @@ describe('validateRoom', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('двухблочная кроватка распознаётся с обеих половин', () => {
+  it('the two-block bed is recognized from either half', () => {
     const { reader: base } = box(5, Block.Pink, { bed: false })
     const withPair: VoxelReader = (x, y, z) => {
       if (x === 1 && y === 1 && z === 1) return Block.BedHead
@@ -189,12 +189,12 @@ describe('validateRoom', () => {
     expect(validateRoom(withPair, 2, 1, 1).ok).toBe(true)
   })
 
-  it('возвращает клетки комнаты, чтобы было куда поселить смурфика', () => {
+  it('returns room cells so there is somewhere to settle the smurf', () => {
     const { reader, bed } = box(5)
     const result = validateRoom(reader, ...bed)
 
     expect(result.cells).toHaveLength(result.volume)
-    // Все клетки внутри оболочки, ни одна не в стене.
+    // All cells are inside the shell, none in a wall.
     for (const cell of result.cells) {
       expect(cell.x).toBeGreaterThan(0)
       expect(cell.x).toBeLessThan(4)

@@ -13,7 +13,7 @@ export type SmurfState =
   | 'exiting'
   | 'leaving'
 
-/** Реплики при заселении. */
+/** Lines spoken on settling. */
 const GREETINGS = [
   'Ух ты, у меня теперь есть дом!',
   'Тут тепло и не дует. Спасибо!',
@@ -43,36 +43,38 @@ function pick(list: readonly string[]): string {
   return list[Math.floor(Math.random() * list.length)]
 }
 
-/** Что смурфику нужно знать о деревне в этом кадре. */
+/** What a smurf needs to know about the village this frame. */
 export interface SmurfContext {
   player: THREE.Vector3
-  /** Точки интереса: крылечки всех домов, пруд, центр площади. */
+  /** Points of interest: every house doorstep, the pond, the square center. */
   pois: readonly THREE.Vector3[]
   others: readonly Smurf[]
-  /** Ближайшая ночная угроза. */
+  /** Nearest night threat. */
   threat: THREE.Vector3 | null
   night: boolean
-  /** Открыть/закрыть дверь — тем же путём, что делает игрок. */
+  /** Open/close a door — same path the player uses. */
   setDoor: (x: number, y: number, z: number, open: boolean) => void
 }
 
 /**
- * Смурфик — житель деревни.
+ * Smurf — a village resident.
  *
- * Днём гуляет по всей деревне между точками интереса (а не топчется у своего дома),
- * болтает с соседями и игроком. Ночью или при виде ночной зверюшки бежит домой, заходит
- * через дверь внутрь и пересиживает до рассвета. Если дом сломали — грустит и уходит.
+ * By day they wander the whole village between points of interest (not just their
+ * own doorstep), chat with neighbors and the player. At night or when they see a
+ * night creature they run home, enter through the door, and wait until dawn. If
+ * the house breaks they leave sadly.
  *
- * Приходит пешком от горизонта: точка спавна далеко, и пока чанки там не прогружены,
- * смурфик идёт «по рельефу» кинематически — гравитация включается на прогруженной земле.
+ * They walk in from the horizon: spawn is far away, and while those chunks are
+ * unloaded the smurf moves “along the terrain” kinematically — gravity kicks in
+ * once the ground is loaded.
  */
 export class Smurf extends Entity {
   state: SmurfState = 'arriving'
-  /** Крылечко своего дома. */
+  /** Own house doorstep. */
   readonly home = new THREE.Vector3()
-  /** Нижняя клетка двери дома, если дверь есть. */
+  /** Lower door cell of the house, if a door exists. */
   door: THREE.Vector3 | null = null
-  /** Клетка внутри комнаты — туда смурфик прячется на ночь. */
+  /** Interior floor cell — where the smurf hides at night. */
   inside: THREE.Vector3 | null = null
   readonly elder: boolean
 
@@ -83,13 +85,13 @@ export class Smurf extends Entity {
   private enterTimer = 0
   private doorOpened = false
 
-  /** Сколько ещё идти к текущей цели прогулки, прежде чем плюнуть и выбрать новую. */
+  /** How long to keep walking toward the current wander goal before picking a new one. */
   private wanderTimeout = 0
-  /** Задержка внутри дома при дневном визите. */
+  /** Stay time inside the house during a daytime visit. */
   private hideTimer = 0
-  /** Неудачные попытки зайти в дверь подряд. */
+  /** Consecutive failed door-entry attempts. */
   private enterAttempts = 0
-  /** Таймаут бегства к дому: без него смурфик, не находящий дороги, бежал бы до утра. */
+  /** Flee-home timeout: without it a smurf who cannot pathfind would run until dawn. */
   private fleeTimer = 0
 
   onSay: ((text: string) => void) | null = null
@@ -104,7 +106,7 @@ export class Smurf extends Entity {
     this.target.copy(home)
   }
 
-  /** Дом сломался: смурфик прощается и уходит. */
+  /** House broke: the smurf says goodbye and leaves. */
   evict(): void {
     if (this.state === 'leaving') return
     this.state = 'leaving'
@@ -118,8 +120,8 @@ export class Smurf extends Entity {
   }
 
   update(dt: number, world: World, elapsed: number, ctx: SmurfContext): void {
-    // Вне прогруженных чанков — кинематика по рельефу: reader там вернул бы воздух,
-    // и смурфик провалился бы в бездну.
+    // Outside loaded chunks — kinematic terrain follow: the reader would return air
+    // there and the smurf would fall into the void.
     if (!world.isChunkGenerated(this.position.x, this.position.z)) {
       this.position.y = world.groundY(this.position.x, this.position.z)
       this.velocity.y = 0
@@ -130,8 +132,8 @@ export class Smurf extends Entity {
     switch (this.state) {
       case 'arriving':
         this.walkTo(dt, VILLAGE.smurfSpeed * 1.25)
-        // Порог с запасом: крылечко может оказаться на полблока в склоне, и смурфик,
-        // дошедший вплотную, не должен вечно топтаться в сантиметре от цели.
+        // Generous threshold: the doorstep may sit half a block into a slope, and a
+        // smurf who arrived should not shuffle forever a centimetre from the goal.
         if (this.horizontalDistanceTo(this.target) < 2.2) {
           this.state = 'idle'
           this.velocity.x = 0
@@ -153,14 +155,14 @@ export class Smurf extends Entity {
       case 'fleeing':
         this.walkTo(dt, VILLAGE.smurfSpeed * 1.8)
         this.fleeTimer -= dt
-        // Дорога к крылечку не находится — юркаем внутрь, а не бегаем в стену до утра.
+        // No path to the doorstep — squeeze inside instead of running into a wall until dawn.
         if (this.fleeTimer <= 0 && this.inside !== null) {
           this.squeezeInside(ctx)
           break
         }
         if (this.horizontalDistanceTo(this.target) < 2.0) {
           if (this.door !== null && this.inside !== null) {
-            // Открываем дверь и заходим.
+            // Open the door and go in.
             if (!this.doorOpened) {
               ctx.setDoor(this.door.x, this.door.y, this.door.z, true)
               this.doorOpened = true
@@ -169,7 +171,7 @@ export class Smurf extends Entity {
             this.enterTimer = 4
             this.target.set(this.inside.x + 0.5, this.inside.y, this.inside.z + 0.5)
           } else {
-            // Дома без двери: внутрь не попасть, дрожим на крылечке.
+            // Houses without a door: cannot get inside, shiver on the doorstep.
             this.state = 'hiding'
           }
         }
@@ -183,8 +185,8 @@ export class Smurf extends Entity {
         if (arrived) {
           this.state = 'hiding'
           this.enterAttempts = 0
-          // Дневной визит короткий; ночью сидим до рассвета (таймер не мешает:
-          // выход всё равно требует «не ночь и не страшно»).
+          // Daytime visits are short; at night we stay until dawn (the timer does not
+          // matter: leaving still requires “not night and not scared”).
           this.hideTimer = 2.4
           this.velocity.x = 0
           this.velocity.z = 0
@@ -193,7 +195,7 @@ export class Smurf extends Entity {
             this.doorOpened = false
           }
         } else if (this.enterTimer <= 0) {
-          // Не зашли — пробуем заново с крылечка, а после трёх неудач юркаем внутрь.
+          // Did not get in — retry from the doorstep; after three fails, squeeze inside.
           this.enterAttempts++
           if (this.enterAttempts < 3) {
             this.startHome(false)
@@ -248,7 +250,7 @@ export class Smurf extends Entity {
     return this.horizontalDistanceTo(ctx.threat) < 12
   }
 
-  /** Идти домой: с криком — спасаясь, молча — просто заглянуть в гости к себе. */
+  /** Head home: with a cry when fleeing, silently when just dropping by. */
   private startHome(cry: boolean): void {
     this.state = 'fleeing'
     this.doorOpened = false
@@ -261,8 +263,8 @@ export class Smurf extends Entity {
   }
 
   /**
-   * Гарантированный вход: смурфик «юркает» внутрь. Последняя защита от картины
-   * «стоит столбиком у стены всю ночь» — лучше маленький телепорт, чем застывший житель.
+   * Guaranteed entry: the smurf “squeezes” inside. Last resort against standing
+   * frozen by a wall all night — a tiny teleport beats a stuck resident.
    */
   private squeezeInside(ctx: SmurfContext): void {
     if (this.inside !== null) {
@@ -279,8 +281,8 @@ export class Smurf extends Entity {
   }
 
   /**
-   * Прогулки по всей деревне: цель выбирается из точек интереса (чужие крылечки, пруд,
-   * площадь), а не из окрестностей своего дома, — деревня выглядит живой.
+   * Village-wide walks: the goal is chosen from points of interest (other doorsteps,
+   * the pond, the square), not the area around their own house — so the village feels alive.
    */
   private wander(dt: number, world: World, ctx: SmurfContext): void {
     if (this.waitTimer > 0) {
@@ -290,7 +292,7 @@ export class Smurf extends Entity {
       return
     }
 
-    // Цель не даётся — выбираем новую, а не тараним стену до конца времён.
+    // Goal unreachable — pick a new one instead of ramming a wall forever.
     this.wanderTimeout -= dt
     const needNewTarget = this.horizontalDistanceTo(this.target) < 0.7 || this.wanderTimeout <= 0
 
@@ -298,8 +300,8 @@ export class Smurf extends Entity {
       this.waitTimer = 1.2 + Math.random() * 2.6
       this.wanderTimeout = 9
 
-      // Иногда — заглянуть домой через дверь: деревня выглядит живой,
-      // а игрок видит, что двери работают.
+      // Sometimes drop by home through the door: the village feels alive,
+      // and the player sees that doors work.
       if (this.door !== null && this.inside !== null && Math.random() < 0.14) {
         this.startHome(false)
         return
@@ -312,7 +314,7 @@ export class Smurf extends Entity {
       const tx = poi.x + Math.cos(angle) * distance
       const tz = poi.z + Math.sin(angle) * distance
 
-      // Цель внутри стены или дома не годится: ждём и в следующий раз бросаем кубик заново.
+      // Goals inside a wall or house are invalid: wait and roll again next time.
       const ty = world.groundY(tx, tz)
       if (world.isSolidAt(tx, ty, tz) || world.isSolidAt(tx, ty + 1, tz)) {
         this.wanderTimeout = 0
@@ -327,8 +329,8 @@ export class Smurf extends Entity {
   }
 
   /**
-   * @param direct без детектора застревания и обходов — для коротких точных путей
-   * через дверной проём, где манёвр «свернуть вбок» только уводит с курса.
+   * @param direct skip stuck detection and sidesteps — for short precise paths
+   * through a doorway, where a “veer sideways” manoeuvre only throws them off course.
    */
   private walkTo(dt: number, speed: number, direct = false): void {
     let dx = this.target.x - this.position.x
@@ -354,7 +356,7 @@ export class Smurf extends Entity {
     this.chatterCooldown -= dt
     if (this.chatterCooldown > 0) return
 
-    // Поболтать с соседом: оба останавливаются друг напротив друга.
+    // Chat with a neighbor: both stop facing each other.
     for (const other of ctx.others) {
       if (other === this || other.state !== 'idle') continue
       if (this.horizontalDistanceTo(other.position) < 2.4) {

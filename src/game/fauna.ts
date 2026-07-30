@@ -9,8 +9,8 @@ const WILD_CAP = 8
 const SPAWN_INTERVAL = 4
 
 /**
- * Дикая живность: спавнится на лугах вокруг игрока, пасётся, идёт за морковкой.
- * Животное, дошедшее до деревни, считается приведённым и переселяется насовсем.
+ * Wildlife: spawns on the meadows around the player, grazes, follows the carrot.
+ * An animal that reaches the village counts as delivered and resettles for good.
  */
 export class Fauna {
   readonly animals: Animal[] = []
@@ -47,7 +47,7 @@ export class Fauna {
         threat: this.nearestThreat(animal.position, threats),
       })
 
-      // Дошёл до деревни за морковкой — переселяется.
+      // Reached the village following the carrot — it resettles.
       if (!animal.delivered && villageCenter !== null) {
         const distance = Math.hypot(
           animal.position.x - villageCenter.x,
@@ -65,7 +65,7 @@ export class Fauna {
         }
       }
 
-      // Дикие звери далеко за спиной игрока не нужны.
+      // Wild animals far behind the player are not needed.
       if (!animal.delivered && animal.position.distanceTo(playerPosition) > 90) {
         this.remove(i)
       }
@@ -92,7 +92,7 @@ export class Fauna {
     const wild = this.animals.filter((animal) => !animal.delivered).length
     if (wild >= WILD_CAP) return
 
-    // Несколько попыток: точка должна быть на суше и на прогруженной земле.
+    // A few attempts: the point must be on land and on generated ground.
     for (let attempt = 0; attempt < 4; attempt++) {
       const angle = Math.random() * Math.PI * 2
       const distance = 16 + Math.random() * 10
@@ -116,7 +116,7 @@ export class Fauna {
     return animal
   }
 
-  /** Восстановление приведённых животных после загрузки — сейв хранит только число. */
+  /** Restores delivered animals after loading — the save stores only a count. */
   restoreDelivered(count: number, villageCenter: THREE.Vector3 | null): void {
     if (villageCenter === null) return
     for (let i = 0; i < count; i++) {

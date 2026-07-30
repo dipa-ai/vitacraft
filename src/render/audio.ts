@@ -1,16 +1,16 @@
 /**
- * Звук целиком синтезируется через WebAudio: ни одного файла в проекте нет, а значит
- * нет и вопросов с лицензиями на ассеты.
+ * All sound is synthesized via WebAudio: the project ships zero files, hence zero
+ * asset licensing questions.
  *
- * Контекст создаётся лениво, при первом действии игрока: браузеры не дают запустить
- * аудио до жеста пользователя, и попытка сделать это раньше просто уходит в ошибку.
+ * The context is created lazily on the first player action: browsers refuse to start
+ * audio before a user gesture, and trying earlier just errors out.
  */
 export class Audio {
   private context: AudioContext | null = null
   private master: GainNode | null = null
   muted = false
 
-  /** Вызывается из обработчика клика — только там браузер разрешает старт аудио. */
+  /** Called from a click handler — the only place browsers allow audio to start. */
   unlock(): void {
     if (this.context !== null) return
     try {
@@ -19,7 +19,7 @@ export class Audio {
       this.master.gain.value = 0.22
       this.master.connect(this.context.destination)
     } catch (error) {
-      console.warn('Звук недоступен:', error)
+      console.warn('Audio unavailable:', error)
     }
   }
 
@@ -46,7 +46,7 @@ export class Audio {
       )
     }
 
-    // Мягкая атака и спад: резкий обрыв даёт щёлк в динамиках.
+    // Soft attack and release: a hard cut clicks in the speakers.
     const peak = options.gain ?? 0.5
     envelope.gain.setValueAtTime(0.0001, start)
     envelope.gain.exponentialRampToValueAtTime(peak, start + 0.012)
@@ -58,7 +58,7 @@ export class Audio {
     oscillator.stop(start + duration + 0.02)
   }
 
-  /** Шум через короткий буфер — для пыли и приземлений. */
+  /** Noise via a short buffer — for dust and landings. */
   private noise(duration: number, gain: number, filterHz: number): void {
     const context = this.context
     const master = this.master
@@ -68,7 +68,7 @@ export class Audio {
     const buffer = context.createBuffer(1, length, context.sampleRate)
     const channel = buffer.getChannelData(0)
     for (let i = 0; i < length; i++) {
-      // Затухающий белый шум.
+      // Decaying white noise.
       channel[i] = (Math.random() * 2 - 1) * (1 - i / length)
     }
 
@@ -102,7 +102,7 @@ export class Audio {
     this.tone(240, 0.22, 'triangle', { toFrequency: 90, gain: 0.5 })
   }
 
-  /** Заселение смурфика: короткий восходящий арпеджио — самая радостная нота в игре. */
+  /** Smurf move-in: a short rising arpeggio — the happiest note in the game. */
   smurfSettled(): void {
     this.tone(523, 0.12, 'sine', { gain: 0.4 })
     this.tone(659, 0.12, 'sine', { gain: 0.4, delay: 0.1 })

@@ -2,10 +2,10 @@ import * as THREE from 'three'
 import { FX_COLORS } from '../config/palette'
 
 /**
- * Мелкие эффекты: разлетающиеся кубики, сердечки и расходящееся кольцо ударной волны.
+ * Small effects: flying cubes, hearts and the expanding shockwave ring.
  *
- * Всё живёт в пуле переиспользуемых мешей: спавнить и выбрасывать геометрию на каждую
- * искру — верный способ поймать рывки от сборщика мусора прямо во время боя.
+ * Everything lives in a pool of reusable meshes: spawning and discarding geometry
+ * per spark is a sure way to catch GC hitches right in the middle of a fight.
  */
 
 const POOL_SIZE = 220
@@ -28,7 +28,7 @@ export class Fx {
   private readonly group = new THREE.Group()
   private readonly sharedGeometry = new THREE.BoxGeometry(1, 1, 1)
   private readonly ringGeometry = new THREE.RingGeometry(0.86, 1, 32)
-  /** Смещение тряски камеры — main.ts прибавляет его к позиции камеры. */
+  /** Camera shake offset — main.ts adds it to the camera position. */
   readonly shake = new THREE.Vector3()
   private shakeStrength = 0
 
@@ -61,11 +61,11 @@ export class Fx {
     for (const particle of this.particles) {
       if (!particle.active) return particle
     }
-    // Пул кончился — лучше пропустить искру, чем расти без предела.
+    // Pool exhausted — better to skip a spark than to grow without bounds.
     return null
   }
 
-  /** Облачко кубиков из точки. Универсальный эффект удара, установки и разрушения. */
+  /** A puff of cubes from a point. The universal hit/place/break effect. */
   burst(
     position: THREE.Vector3,
     color: number,
@@ -89,7 +89,7 @@ export class Fx {
       particle.spin = (Math.random() - 0.5) * 12
       particle.baseScale = size * (0.6 + Math.random() * 0.8)
 
-      // Разлёт полусферой вверх: вниз частицы всё равно сразу утянет гравитация.
+      // Scatter in an upward hemisphere: gravity drags them down right away anyway.
       const angle = Math.random() * Math.PI * 2
       const up = 0.4 + Math.random() * 0.8
       particle.velocity.set(
@@ -112,19 +112,19 @@ export class Fx {
     }
   }
 
-  /** Сердечки: главный визуальный отклик на то, что смурфику понравился дом. */
+  /** Hearts: the main visual feedback that a smurf liked the house. */
   hearts(position: THREE.Vector3, count = 12): void {
     this.burst(position, FX_COLORS.heart, count, {
       speed: 2.6,
       size: 0.17,
       life: 1.3,
-      // Отрицательная гравитация — сердечки всплывают, а не падают.
+      // Negative gravity — hearts float up instead of falling.
       gravity: -2.2,
       spread: 0.5,
     })
   }
 
-  /** Кольцо ударной волны по земле — телеграф-последствие прыжка босса. */
+  /** Ground shockwave ring — the payoff of the boss leap telegraph. */
   shockwave(position: THREE.Vector3, maxRadius: number, duration: number): void {
     const mesh = new THREE.Mesh(
       this.ringGeometry,
@@ -143,7 +143,7 @@ export class Fx {
     this.rings.push({ mesh, life: duration, maxLife: duration, maxRadius })
   }
 
-  /** Тряска экрана. Значения складываются, но затухают экспоненциально. */
+  /** Screen shake. Values stack but decay exponentially. */
   addShake(strength: number): void {
     this.shakeStrength = Math.min(1.2, this.shakeStrength + strength)
   }
@@ -163,7 +163,7 @@ export class Fx {
       particle.mesh.rotation.x += particle.spin * dt
       particle.mesh.rotation.y += particle.spin * dt
 
-      // К концу жизни частица тает и уменьшается.
+      // Toward end of life a particle fades and shrinks.
       const t = particle.life / particle.maxLife
       particle.mesh.scale.setScalar(particle.baseScale * (0.35 + t * 0.65))
       ;(particle.mesh.material as THREE.MeshLambertMaterial).opacity = Math.min(1, t * 1.8)

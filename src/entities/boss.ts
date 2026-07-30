@@ -19,22 +19,23 @@ export type BossState =
   | 'dying'
   | 'dead'
 
-/** Высота модели босса в единичном масштабе — до умножения на BOSS.scale. */
+/** Boss model height at unit scale — before multiplying by BOSS.scale. */
 const MODEL_HEIGHT = 1.9
 const MODEL_RADIUS = 0.7
 
 /**
- * Витрулян — гигантский рыжий кролик. Атаки кроличьи: дальний прыжок с ударной волной,
- * стремительный рывок и подкоп с выныриванием возле игрока.
+ * Vitruylan — a giant ginger rabbit. Attacks are rabbit-themed: a long leap with a
+ * shockwave, a fast dash, and a burrow that emerges near the player.
  *
- * Два правила определяют, честный ли это бой:
+ * Two rules make the fight fair:
  *
- * 1. У каждой атаки есть телеграф: перед прыжком приседает и прижимает уши, перед рывком
- *    наклоняется, перед подкопом роет землю. Без предупреждения босс — лотерея.
- * 2. Ударная волна бьёт только стоящего на земле, поэтому от неё уклоняются прыжком.
+ * 1. Every attack has a telegraph: before a leap he crouches and pins his ears,
+ *    before a dash he leans forward, before a burrow he digs. Without warning the
+ *    boss would be a lottery.
+ * 2. The shockwave only hits standing on the ground, so it is dodged by jumping.
  *
- * Воксели босс не ломает намеренно: игрок вложился в деревню, и её разрушение
- * ощущалось бы наказанием за то, что он играл.
+ * The boss never deliberately breaks voxels: the player invested in the village,
+ * and destroying it would feel like punishing them for playing.
  */
 export class Boss extends Entity {
   state: BossState = 'intro'
@@ -47,9 +48,9 @@ export class Boss extends Entity {
   private dyingProgress = 0
 
   onSlam: ((origin: THREE.Vector3, radius: number, damage: number) => void) | null = null
-  /** Касание в рывке — контактный урон. */
+  /** Dash contact — melee damage. */
   onTouch: ((damage: number) => void) | null = null
-  /** Дрожь земли, пока босс идёт под землёй, — телеграф места выныривания. */
+  /** Ground tremor while the boss travels underground — telegraph for the emerge spot. */
   onTremor: ((position: THREE.Vector3) => void) | null = null
   onIntroDone: (() => void) | null = null
   onDefeated: (() => void) | null = null
@@ -79,14 +80,14 @@ export class Boss extends Entity {
     return this.health / this.maxHealth
   }
 
-  /** С фазой кролик быстрее и злее. */
+  /** With each phase the rabbit gets faster and meaner. */
   private get aggression(): number {
     return this.phase === 1 ? 1 : this.phase === 2 ? BOSS.enrageSpeedBonus : BOSS.enrageSpeedBonus * 1.25
   }
 
   takeDamage(amount: number): boolean {
     if (this.state === 'dying' || this.state === 'dead' || this.state === 'intro') return false
-    // Под землёй не достать — иначе подкоп был бы моментом бесплатного урона по боссу.
+    // Untargetable underground — otherwise burrow would be free damage on the boss.
     if (this.state === 'burrow-move') return false
     const phaseBefore = this.phase
     const applied = super.takeDamage(amount)
@@ -139,7 +140,7 @@ export class Boss extends Entity {
         break
 
       case 'leap-telegraph': {
-        // Приседает и прижимает уши — по этому прыжок и читается заранее.
+        // Crouches and pins ears — that is how the leap reads in advance.
         const t = 1 - Math.max(0, this.timer) / BOSS.leapTelegraph
         this.model.squash = t
         this.setEars(-t * 1.1)
@@ -149,7 +150,7 @@ export class Boss extends Entity {
           this.setEars(0)
           this.state = 'leap-air'
           this.velocity.y = 13
-          // Горизонтальная скорость подобрана под время полёта — прыжок накрывает игрока.
+          // Horizontal speed is tuned to flight time so the leap lands on the player.
           const toPlayer = this.scratch.subVectors(playerPosition, this.position).setY(0)
           const distance = toPlayer.length()
           if (distance > 0.01) {
@@ -164,13 +165,13 @@ export class Boss extends Entity {
       }
 
       case 'leap-air':
-        // Тяжёлое падение читается лучше плавного спуска.
+        // A heavy fall reads better than a gentle descent.
         if (this.velocity.y < 0) this.velocity.y -= 18 * dt
         break
 
       case 'dash-telegraph': {
         const t = 1 - Math.max(0, this.timer) / BOSS.dashTelegraph
-        // Наклон вперёд вместо приседания — рывок телеграфится иначе, чем прыжок.
+        // Lean forward instead of crouching — dash telegraphs differently from leap.
         this.body.rotation.x = t * 0.35
         this.faceTowards(playerPosition.x, playerPosition.z, dt, 8)
         if (this.timer <= 0) {
@@ -187,7 +188,7 @@ export class Boss extends Entity {
       case 'dash': {
         this.velocity.x = this.dashDirection.x * BOSS.dashSpeed
         this.velocity.z = this.dashDirection.z * BOSS.dashSpeed
-        // Контактный урон — один раз за рывок, дальше игрока спасает неуязвимость.
+        // Contact damage once per dash; i-frames protect after that.
         if (!this.dashHit) {
           const distance = Math.hypot(
             playerPosition.x - this.position.x,
@@ -220,7 +221,7 @@ export class Boss extends Entity {
       }
 
       case 'burrow-move': {
-        // Дрожь ползёт от места подкопа к игроку — игрок видит, куда босс вынырнет.
+        // Tremor crawls from the dig site toward the player — they see where he will emerge.
         this.tremorTimer -= dt
         const progress = 1 - Math.max(0, this.timer) / BOSS.burrowTravel
         this.burrowTarget.lerpVectors(this.burrowStart, playerPosition, progress)
@@ -258,7 +259,7 @@ export class Boss extends Entity {
         break
     }
 
-    // Под землёй физика не нужна: босс движется как дрожь, а не как тело.
+    // No physics underground: the boss moves as a tremor, not as a body.
     if (this.state !== 'burrow-move') {
       const justLanded = this.applyGravity(dt, world)
       this.stepMove(world, dt)
@@ -291,7 +292,7 @@ export class Boss extends Entity {
     if (distance < 0.001) return
 
     const speed = BOSS.chaseSpeed * this.aggression
-    // Скачками, а не ровным скольжением — кролик же.
+    // In hops, not a smooth slide — he is a rabbit.
     if (this.onGround && this.hopTimer <= 0) {
       this.hopTimer = 0.55
       this.velocity.y = 6
@@ -306,8 +307,8 @@ export class Boss extends Entity {
       playerPosition.z - this.position.z,
     )
 
-    // Издалека — прыжок, вблизи — рывок, а подкоп примешивается на средней дистанции:
-    // у игрока появляется смысл управлять дистанцией.
+    // Far away — leap; up close — dash; burrow mixes in at mid range so the player
+    // has a reason to manage distance.
     const roll = Math.random()
     if (distance > 13) {
       this.state = roll < 0.3 ? 'burrow-dig' : 'leap-telegraph'
@@ -325,7 +326,7 @@ export class Boss extends Entity {
     }
   }
 
-  /** Выныривает рядом с игроком — но только там, где над землёй есть место. */
+  /** Emerges near the player — but only where there is room above ground. */
   private emerge(world: World, playerPosition: THREE.Vector3): void {
     let bestX = this.burrowStart.x
     let bestZ = this.burrowStart.z
@@ -336,7 +337,7 @@ export class Boss extends Entity {
       const x = playerPosition.x + Math.cos(angle) * radius
       const z = playerPosition.z + Math.sin(angle) * radius
       const y = world.groundY(x, z)
-      // Проверяем зазор над землёй: внутри постройки не выныриваем.
+      // Check clearance above ground: do not emerge inside a building.
       let clear = true
       for (let dy = 0; dy < 4 && clear; dy++) {
         if (isSolid(world.getVoxel(x, y + dy, z))) clear = false

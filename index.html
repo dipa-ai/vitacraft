@@ -37,14 +37,14 @@
         height: 100vh;
       }
 
-      /* Интерфейс живёт поверх канваса и не перехватывает мышь. */
+      /* UI sits above the canvas and does not capture the mouse. */
       #ui {
         position: fixed;
         inset: 0;
         pointer-events: none;
       }
 
-      /* --- Прицел --- */
+      /* --- Crosshair --- */
       #crosshair {
         position: absolute;
         left: 50%;
@@ -85,7 +85,7 @@
         transform: scale(1.45);
       }
 
-      /* --- Сердечки --- */
+      /* --- Hearts --- */
       #hearts {
         position: absolute;
         left: 22px;
@@ -113,7 +113,7 @@
         transform: scale(1.3);
       }
 
-      /* --- Хотбар --- */
+      /* --- Hotbar --- */
       #hotbar {
         position: absolute;
         left: 50%;
@@ -169,7 +169,7 @@
         text-shadow: 0 1px 0 #fff;
       }
 
-      /* --- Трекер задания --- */
+      /* --- Quest tracker --- */
       #quest {
         position: absolute;
         right: 22px;
@@ -219,7 +219,7 @@
         transition: width 0.4s ease-out;
       }
 
-      /* --- Полоса здоровья босса --- */
+      /* --- Boss health bar --- */
       #bossbar {
         position: absolute;
         left: 50%;
@@ -268,7 +268,7 @@
         transition: width 0.25s ease-out;
       }
 
-      /* --- Реплики --- */
+      /* --- Speech / toasts --- */
       #toasts {
         position: absolute;
         left: 50%;
@@ -310,7 +310,7 @@
         }
       }
 
-      /* --- Полноэкранные экраны --- */
+      /* --- Full-screen cards --- */
       #overlay {
         position: absolute;
         inset: 0;
@@ -334,6 +334,40 @@
         border-radius: 30px;
         box-shadow: 0 10px 0 rgba(74, 63, 85, 0.13), 0 24px 60px rgba(74, 63, 85, 0.22);
         text-align: center;
+      }
+
+      .card.start-card {
+        width: min(900px, 92vw);
+        max-width: none;
+        padding: 0 0 28px;
+        overflow: hidden;
+      }
+
+      .start-art {
+        width: 100%;
+        aspect-ratio: 1536 / 700;
+        overflow: hidden;
+        background: #9fd3ef;
+      }
+
+      .start-art img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .start-card .btn {
+        margin-top: 22px;
+        background: #f2c65d;
+        color: #fff;
+        box-shadow: 0 5px 0 #9b6640;
+        text-shadow: 0 2px 0 rgba(120, 79, 49, 0.28);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .start-card .btn:active {
+        box-shadow: 0 1px 0 #9b6640;
       }
 
       .card h1 {
@@ -414,7 +448,7 @@
         transition: opacity 0.16s;
       }
 
-      /* --- Подпись выбранного предмета: тултипов в pointer lock не бывает --- */
+      /* --- Selected-item label: tooltips do not work under pointer lock --- */
       #itemlabel {
         position: absolute;
         left: 50%;
@@ -444,7 +478,7 @@
         margin-top: 2px;
       }
 
-      /* --- Постоянная подсказка про панель ресурсов --- */
+      /* --- Persistent hint for the resources panel --- */
       #tabhint {
         position: absolute;
         right: 22px;
@@ -456,6 +490,10 @@
         font-size: 12px;
         font-weight: 700;
         opacity: 0.75;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
 
       #tabhint b {
@@ -467,8 +505,9 @@
         font-size: 11px;
       }
 
-      /* --- Панель ресурсов (Tab) --- */
-      #resources {
+      /* --- Resources (Tab) and controls help (Q) --- */
+      #resources,
+      #help {
         position: absolute;
         left: 50%;
         top: 50%;
@@ -485,14 +524,45 @@
         transition: opacity 0.18s, transform 0.18s;
       }
 
-      #resources.show {
+      #resources.show,
+      #help.show {
         opacity: 1;
         transform: translate(-50%, -50%);
       }
 
-      #resources h2 {
+      #resources h2,
+      #help h2 {
         margin: 0 0 12px;
         font-size: 20px;
+      }
+
+      #help {
+        width: min(620px, 88vw);
+      }
+
+      #help > p {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.5;
+        opacity: 0.8;
+      }
+
+      #help .keys {
+        margin: 18px auto 14px;
+      }
+
+      #help .help-footer {
+        text-align: center;
+        font-weight: 700;
+      }
+
+      #help .help-footer b {
+        display: inline-block;
+        padding: 2px 8px;
+        background: #fff;
+        border-radius: 7px;
+        box-shadow: 0 2px 0 rgba(74, 63, 85, 0.2);
+        font-size: 12px;
       }
 
       .res-row {
@@ -545,7 +615,10 @@
       <div id="hearts"></div>
       <div id="hotbar"></div>
       <div id="itemlabel"></div>
-      <div id="tabhint"><b>Tab</b> — ресурсы: что это и где взять</div>
+      <div id="tabhint">
+        <span><b>Tab</b> — ресурсы</span>
+        <span><b>Q</b> — управление</span>
+      </div>
 
       <div id="quest">
         <div class="title">Испытание</div>
@@ -565,6 +638,8 @@
         <h2>Ресурсы — что это и где взять</h2>
         <div class="list"></div>
       </div>
+
+      <div id="help"></div>
 
       <div id="overlay">
         <div class="card" id="overlay-card"></div>

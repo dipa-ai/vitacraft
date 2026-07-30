@@ -1,43 +1,43 @@
-/** Все игровые числа в одном месте, чтобы баланс правился без охоты по коду. */
+/** Every gameplay number in one place so balance is tuned without a code hunt. */
 
 export const WORLD = {
-  /** Чанк 16×64×16 вокселей. */
+  /** A chunk is 16×64×16 voxels. */
   chunkSizeX: 16,
   chunkSizeY: 64,
   chunkSizeZ: 16,
-  /** Радиус прогрузки чанков вокруг игрока. Согласован с плотностью тумана в scene.ts:
-   * туман должен скрывать край прогруженной области, иначе виден обрыв мира. */
+  /** Chunk streaming radius around the player. Matched to the fog density in scene.ts:
+   * fog must hide the edge of the loaded area, or the world visibly ends. */
   viewRadius: 6,
   seaLevel: 26,
-  /** Не больше столько перестроек мешей за кадр — иначе фризы при активной стройке. */
+  /** At most this many mesh rebuilds per frame — more causes hitches while building. */
   remeshPerFrame: 2,
   seed: 1337,
-  /** Период тика симуляции воды, секунды (5 Гц). */
+  /** Water simulation tick period, seconds (5 Hz). */
   waterTick: 0.2,
-  /** Не больше столько водяных клеток за тик — вода течёт спокойно и не съедает кадр. */
+  /** At most this many water cells per tick — water flows calmly, not eating the frame. */
   waterBudget: 48,
 } as const
 
 export const PLAYER = {
   width: 0.6,
   height: 1.8,
-  /** Глаза чуть ниже макушки. */
+  /** Eyes sit slightly below the top of the head. */
   eyeHeight: 1.62,
   walkSpeed: 4.6,
   runSpeed: 7.0,
   jumpSpeed: 8.4,
   gravity: 26.0,
-  /** В воде медленнее и с выталкиванием наверх. */
+  /** Slower in water, with upward buoyancy. */
   swimSpeed: 3.0,
   swimBuoyancy: 6.0,
   maxHealth: 10,
-  /** Неуязвимость после получения урона, секунды. */
+  /** Invulnerability after taking damage, seconds. */
   invulnerable: 0.5,
-  /** Регенерация: пауза после последнего урона и период восстановления сердечка. */
+  /** Regen: delay after the last hit and the per-heart recovery interval. */
   regenDelay: 6.0,
   regenInterval: 3.0,
   reach: 5.0,
-  /** Ломать блоки заметно быстрее, чем бить: удержание ЛКМ должно сносить стену потоком. */
+  /** Breaking is much faster than hitting: held LMB should chew through a wall. */
   blockBreakCooldown: 0.2,
   meleeRange: 3.2,
   meleeDamage: 2,
@@ -51,7 +51,7 @@ export const CAMERA = {
   fov: 72,
   near: 0.1,
   far: 400,
-  /** Отступ камеры в третьем лице и её минимальное поджатие у стены. */
+  /** Third-person camera distance and its minimum pull-in at a wall. */
   thirdPersonDistance: 5.0,
   thirdPersonHeight: 0.6,
   thirdPersonMinDistance: 1.2,
@@ -59,32 +59,32 @@ export const CAMERA = {
 } as const
 
 export const VILLAGE = {
-  /** Сколько домов нужно, чтобы деревня считалась готовой. */
+  /** Houses required for the village to count as complete. */
   housesRequired: 5,
-  /** Лимит flood-fill: вышли за него — комната «протекает», это не дом. */
+  /** Flood-fill budget: exceeding it means the room "leaks" — not a house. */
   floodFillBudget: 300,
-  /** Минимальный внутренний объём комнаты в воксельных клетках. */
+  /** Minimum interior room volume in voxel cells. */
   minRoomVolume: 8,
   smurfSpeed: 1.9,
-  /** Радиус блуждания смурфика вокруг точки интереса. */
+  /** Smurf wander radius around a point of interest. */
   wanderRadius: 7,
-  /** Смурфики приходят пешком с этого расстояния — «от горизонта», а не из воздуха. */
+  /** Smurfs walk in from this distance — "from the horizon", not out of thin air. */
   arriveDistance: 48,
-  /** Квест «зверинец»: сколько животных привести. */
+  /** "Menagerie" quest: how many animals to bring. */
   animalsRequired: 3,
-  /** Животные идут за морковкой в руках в этом радиусе. */
+  /** Animals follow a held carrot within this radius. */
   animalFollowRadius: 8,
-  /** Животное считается приведённым внутри этого радиуса от центра деревни. */
+  /** An animal counts as delivered within this radius of the village center. */
   deliverRadius: 14,
-  /** Квест «пруд»: столько клеток воды выше уровня моря рядом с деревней. */
+  /** "Pond" quest: this many water cells above sea level near the village. */
   pondCellsRequired: 9,
   pondScanRadius: 22,
-  /** Квест «облачка»: сколько зарядов собрать с ночных врагов. */
+  /** "Clouds" quest: how many charges to gather from night enemies. */
   cloudsRequired: 10,
 } as const
 
 export const NIGHT = {
-  /** Лимит одновременных врагов по стадии квеста: до ночного квеста мягко. */
+  /** Concurrent enemy cap by quest stage: gentle before the night quest. */
   maxEnemiesEarly: 2,
   maxEnemiesQuest: 4,
   maxEnemiesLate: 6,
@@ -95,7 +95,7 @@ export const NIGHT = {
   lurkerSpeed: 2.7,
   lurkerDamage: 1,
   lurkerTouchCooldown: 1.0,
-  /** Смурфик пугается и бежит домой, когда враг ближе. */
+  /** A smurf panics and runs home when an enemy is closer than this. */
   scareRadius: 9,
   cloudDropMin: 1,
   cloudDropMax: 2,
@@ -103,13 +103,13 @@ export const NIGHT = {
 
 export const BOSS = {
   maxHealth: 60,
-  /** Пороги HP (в долях), на которых меняются фазы. */
+  /** HP thresholds (fractions) where phases change. */
   phase2At: 0.66,
   phase3At: 0.33,
   scale: 3.2,
   chaseSpeed: 3.4,
   enrageSpeedBonus: 1.6,
-  /** Телеграфы — без них бой нечестный. Кроличьи атаки: прыжок, рывок, подкоп. */
+  /** Telegraphs — the fight is unfair without them. Rabbit moves: leap, dash, burrow. */
   leapTelegraph: 0.7,
   leapSpeed: 14.0,
   dashTelegraph: 0.45,
@@ -117,9 +117,9 @@ export const BOSS = {
   dashDuration: 0.55,
   dashDamage: 2,
   burrowTelegraph: 0.5,
-  /** Время «под землёй» — дрожь идёт к игроку. */
+  /** Time spent underground — the tremor travels toward the player. */
   burrowTravel: 1.1,
-  /** Выныривает не дальше этого от игрока. */
+  /** Surfaces no farther than this from the player. */
   emergeRadius: 4.0,
   emergeShockRadius: 4.5,
   emergeDamage: 1,
@@ -131,8 +131,8 @@ export const BOSS = {
 } as const
 
 export const DAY = {
-  /** Длина полных суток в секундах. */
+  /** Full day length in seconds. */
   lengthSeconds: 240,
-  /** Доля суток, начиная с которой наступает ночь. */
+  /** Fraction of the day at which night begins. */
   nightStart: 0.55,
 } as const

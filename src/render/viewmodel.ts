@@ -4,16 +4,16 @@ import { BLOCK_COLORS, CREATURE_COLORS } from '../config/palette'
 import { Block, blockDef } from '../world/blocks'
 
 /**
- * Руки от первого лица: правая держит кирку и машет по ЛКМ, левая — выбранный предмет
- * и толкается вперёд при установке. Без них вид от первого лица ощущается пустым,
- * а по маху кирки читается сам факт удара.
+ * First-person hands: the right one holds the pickaxe and swings on LMB, the left one
+ * holds the selected item and bumps forward on placement. Without them first person
+ * feels empty, and the pickaxe swing is what makes a strike readable.
  *
- * Группа подвешена ребёнком к камере, поэтому позиции заданы в её системе координат
- * (-Z — вперёд). Материалы рисуются без теста глубины поверх всего мира: иначе руки
- * проваливались бы в стену, стоит подойти вплотную.
+ * The group is parented to the camera, so positions are in camera space (-Z forward).
+ * Materials draw without depth testing on top of the world: otherwise hands would
+ * sink into a wall the moment you step close.
  */
 
-/** Материал вью-модели: поверх мира, без теней. */
+/** Viewmodel material: over the world, no shadows. */
 function handMaterial(color: number, opacity = 1): THREE.MeshLambertMaterial {
   const material = new THREE.MeshLambertMaterial({ color })
   material.depthTest = false
@@ -51,24 +51,24 @@ export class Viewmodel {
   private readonly itemHolder = new THREE.Group()
 
   private currentItem: Block | null = null
-  /** Фаза маха кирки, 0…1; -1 — покой. */
+  /** Pickaxe swing phase, 0…1; -1 is rest. */
   private swingPhase = -1
-  /** Отскок предмета при установке, 0…1 затухает. */
+  /** Item bump on placement, 0…1 decaying. */
   private placeBumpAmount = 0
 
   constructor(camera: THREE.PerspectiveCamera) {
     camera.add(this.group)
 
-    // Вся вью-модель чуть уменьшена и прижата к углам, чтобы не лезть к прицелу.
+    // The whole viewmodel is slightly shrunk and pushed to the corners, away from the crosshair.
     this.group.scale.setScalar(0.72)
 
-    // Правая рука с киркой.
+    // Right hand with the pickaxe.
     this.pickaxePivot.position.set(0.56, -0.48, -0.82)
     this.pickaxePivot.rotation.set(-0.5, -0.35, 0.18)
     this.buildArmWithPickaxe(this.pickaxePivot)
     this.group.add(this.pickaxePivot)
 
-    // Левая рука с предметом.
+    // Left hand with the item.
     this.itemPivot.position.set(-0.54, -0.42, -0.76)
     this.itemPivot.rotation.set(-0.25, 0.3, -0.1)
     const arm = box(0.13, 0.34, 0.13, CREATURE_COLORS.playerBody, 0.05)
@@ -86,7 +86,7 @@ export class Viewmodel {
     arm.rotation.x = 0.7
     pivot.add(arm)
 
-    // Кирка: черенок и голова-перекладина с двумя опущенными кончиками.
+    // Pickaxe: a handle and a crossbar head with two drooping tips.
     const handle = box(0.04, 0.36, 0.04, BLOCK_COLORS.woodSide, 0.015)
     handle.position.set(0, 0.1, 0)
     pivot.add(handle)
@@ -103,7 +103,7 @@ export class Viewmodel {
     }
   }
 
-  /** Пересобирает предмет в левой руке под выбранный слот. */
+  /** Rebuilds the left-hand item for the selected slot. */
   setItem(item: Block): void {
     if (item === this.currentItem) return
     this.currentItem = item
@@ -140,7 +140,7 @@ export class Viewmodel {
     }
 
     if (item === Block.Water) {
-      // Ведёрко: серый стакан с голубой водой поверх.
+      // Bucket: a gray cup with blue water on top.
       const bucket = new THREE.Group()
       const body = box(0.17, 0.15, 0.17, BLOCK_COLORS.stone, 0.03)
       const water = box(0.13, 0.04, 0.13, BLOCK_COLORS.water, 0.015, 0.85)
@@ -149,12 +149,12 @@ export class Viewmodel {
       return bucket
     }
 
-    // Обычный блок — мини-кубик его цвета.
+    // A regular block — a mini cube of its color.
     const def = blockDef(item)
     return box(0.16, 0.16, 0.16, def.topColor ?? def.color, 0.025, def.opacity ?? 1)
   }
 
-  /** Толчок предмета вперёд — отклик на установку блока. */
+  /** Forward item bump — placement feedback. */
   placeBump(): void {
     this.placeBumpAmount = 1
   }
@@ -163,7 +163,7 @@ export class Viewmodel {
     this.group.visible = visible
     if (!visible) return
 
-    // Мах кирки: запускается и крутится, пока зажата ЛКМ.
+    // Pickaxe swing: starts and loops while LMB is held.
     if (this.swingPhase < 0 && attacking) this.swingPhase = 0
     if (this.swingPhase >= 0) {
       this.swingPhase += dt / 0.26
@@ -176,7 +176,7 @@ export class Viewmodel {
     this.placeBumpAmount = Math.max(0, this.placeBumpAmount - dt * 5)
     const bump = Math.sin(this.placeBumpAmount * Math.PI) * 0.14
 
-    // Покачивание при ходьбе и лёгкое дыхание на месте.
+    // Walk bobbing plus gentle idle breathing.
     const walk = Math.min(1, walkSpeed / 4)
     const bobY = Math.abs(Math.sin(time * 7.5)) * 0.03 * walk + Math.sin(time * 1.8) * 0.006
     const bobX = Math.sin(time * 3.75) * 0.02 * walk

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import logoUrl from '../vitacraft-logo.png?url'
 import { BOSS, CAMERA, DAY, NIGHT, PLAYER, WORLD } from './config/tuning'
 import { Boss } from './entities/boss'
 import { Combat } from './game/combat'
@@ -29,7 +30,13 @@ import { raycastVoxels } from './world/raycast'
 import { World, toChunkCoord } from './world/world'
 
 const START_CARD = `
-  <h1>Vita<span class="accent">Craft</span></h1>
+  <div class="start-art">
+    <img src="${logoUrl}" alt="VitaCraft">
+  </div>
+`
+
+const HELP_CONTENT = `
+  <h2>Управление</h2>
   <p>Мягкий воксельный мир, деревня для смурфиков, ночи с тёмными зверюшками
   и один очень большой рыжий кролик.</p>
   <div class="keys">
@@ -40,9 +47,11 @@ const START_CARD = `
     <b>F</b><span>метнуть облачко (добывается из ночных зверюшек)</span>
     <b>1–9</b><span>выбрать блок, колесо крутит все слоты</span>
     <b>Tab</b><span>панель ресурсов: что это и где взять</span>
+    <b>Q</b><span>показать или скрыть эту справку</span>
     <b>F5</b><span>сменить вид: от первого лица ↔ от третьего (или <b>V</b>)</span>
     <b>Esc</b><span>пауза</span>
   </div>
+  <p class="help-footer">Нажми <b>Q</b>, чтобы вернуться в игру</p>
 `
 
 const PAUSE_CARD = `
@@ -63,7 +72,7 @@ const WIN_CARD = `
   <p>Мир остаётся твоим: строй дальше сколько хочешь.</p>
 `
 
-/** Фазы прохождения. */
+/** Playthrough stages. */
 type Stage = 'village' | 'boss-incoming' | 'boss' | 'won'
 
 class Game {
@@ -85,16 +94,17 @@ class Game {
   private readonly night: NightManager
   private saveTimer = 0
   private doorAuditTimer = 1
+  private hasStoredSave = false
   /**
-   * Разрешено ли писать сохранение при закрытии страницы. Сбрасывается кнопкой
-   * «Начать заново»: без этого флага обработчик beforeunload успевает записать старое
-   * состояние обратно уже после clearSave(), и сброс не работает вообще.
+   * Whether saving on page close is allowed. Cleared by the "Start over" button:
+   * without this flag the beforeunload handler would write the old state back
+   * right after clearSave(), and the reset would never work at all.
    */
   private saveOnExit = true
 
   private stage: Stage = 'village'
   private boss: Boss | null = null
-  /** Задержка между «деревня готова» и появлением босса. */
+  /** Delay between "village completed" and the boss showing up. */
   private bossCountdown = 0
   private readonly spawnPoint = new THREE.Vector3()
 
@@ -108,14 +118,14 @@ class Game {
   private lastHealth = -1
   private lastHotbarKey = ''
 
-  // Переиспользуемые векторы: в цикле кадра аллокации ни к чему.
+  // Reusable vectors: no allocations inside the frame loop.
   private readonly head = new THREE.Vector3()
   private readonly back = new THREE.Vector3()
 
   constructor() {
     this.rig.scene.add(this.world.group)
-    // Порядок YXZ — стандартный для управления от первого лица: рыскание вокруг мировой
-    // вертикали, тангаж вокруг локальной оси камеры.
+    // YXZ order is the standard for first-person controls: yaw around the world
+    // vertical, pitch around the camera's local axis.
     this.rig.camera.rotation.order = 'YXZ'
 
     this.controls = new Controls(this.canvas, this.player)
@@ -131,6 +141,7 @@ class Game {
     this.playerModel.group.visible = false
 
     this.hud.buildHotbar(HOTBAR_BLOCKS)
+    this.hud.setHelpContent(HELP_CONTENT)
     this.wireControls()
     this.wireVillage()
     this.wireCombat()
@@ -139,17 +150,17 @@ class Game {
   }
 
   private wireCombat(): void {
-    // ЛКМ обслуживает и бой, и копание: Interaction сам решает по дистанции, что ближе.
+    // LMB serves both combat and digging: Interaction picks whichever is closer.
     this.interact.entityRaycaster = (origin, direction, maxDistance) =>
       this.combat.raycastEntities(origin, direction, maxDistance)
     this.controls.onThrow = () => {
-      // Сначала заряд, потом бросок: облачки — добываемый ресурс, а не бесконечная кнопка.
+      // Ammo first, throw second: clouds are a gathered resource, not an infinite button.
       if (!this.interact.consumeCloud()) {
         this.hud.toastOnce('no-cloud', 'Нет облачков! Они выпадают из ночных зверюшек')
         return
       }
       if (!this.combat.throwFromPlayer()) {
-        // Бросок не случился из-за кулдауна — заряд возвращаем.
+        // The throw was rejected by the cooldown — refund the charge.
         this.interact.add(Block.Cloud)
         return
       }
@@ -187,7 +198,7 @@ class Game {
       })
       this.village.handleBlockBroken(x, y, z, block)
       this.audio.breakBlock()
-      // Первая добытая морковка — подсказка, как ей пользоваться.
+      // First carrot ever harvested — hint at what it is for.
       if (block === Block.CarrotPlant) {
         this.hud.toastOnce('carrot', 'Морковка! Возьми её в руку — зверюшки пойдут за тобой')
       }
@@ -200,7 +211,7 @@ class Game {
     this.village.onHint = (id, text) => this.hud.toastOnce(id, text)
     this.village.onSettled = () => this.audio.smurfSettled()
     this.village.onProgress = (title, done, total) => {
-      // Для одношаговых заданий счётчик «1 из 1» — шум, а не информация.
+      // For single-step quests a "1 of 1" counter is noise, not information.
       this.hud.setQuest(total > 1 ? `${title}: ${done} из ${total}` : title, done, total)
     }
     this.village.setDoor = (x, y, z, open) => {
@@ -213,7 +224,7 @@ class Game {
       if (this.stage !== 'village') return
       this.stage = 'boss-incoming'
       this.bossCountdown = 5
-      // Ночь наступает вместе с боссом: смена освещения делает событие событием.
+      // Night falls together with the boss: the lighting change makes it an event.
       this.dayTime = DAY.lengthSeconds * 0.72
       this.hud.toast('Все испытания пройдены! Но за холмами кто-то большой и рыжий…', 6000)
       this.fx.addShake(0.5)
@@ -250,10 +261,14 @@ class Game {
       this.showItemLabel()
     }
     this.controls.onCycleSlot = (direction) => {
-      // Открыта панель ресурсов — колесо листает её, а не слоты: в захваченном
-      // курсоре это единственный способ добраться до нижних строк.
+      // While the resources panel is open the wheel scrolls it instead of the
+      // hotbar: with the pointer locked this is the only way to reach lower rows.
       if (this.hud.resourcesOpen) {
         this.hud.scrollResources(direction * 110)
+        return
+      }
+      if (this.hud.helpOpen) {
+        this.hud.scrollHelp(direction * 110)
         return
       }
       this.interact.cycleSlot(direction)
@@ -266,6 +281,7 @@ class Game {
       this.hud.toast(mode === 'first' ? 'Вид: от первого лица' : 'Вид: от третьего лица', 1600)
     }
     this.controls.onToggleResources = () => this.hud.toggleResources()
+    this.controls.onToggleHelp = () => this.hud.toggleHelp()
     this.interact.onNoRoom = () => {
       this.hud.toastOnce('no-room', 'Тут не встанет — или блоков нет, или ты сам мешаешь')
     }
@@ -277,21 +293,22 @@ class Game {
       this.audio.placeBlock()
       this.viewmodel.placeBump()
     }
-    // Единая точка правды для дверных мешей: любое изменение блока может создать,
-    // убрать или переключить дверь.
+    // Single source of truth for door meshes: any block change may create,
+    // remove or toggle a door.
     this.interact.onBlockChanged = (x, y, z) => this.doors.onBlockChanged(x, y, z)
   }
 
-  /** Имя и краткое описание того, что сейчас в руке. */
+  /** Name and short description of whatever is currently held. */
   private showItemLabel(): void {
     const def = blockDef(this.interact.activeBlock)
     this.hud.showItemName(def.name, def.description)
   }
 
   private spawn(): void {
-    // Правки игрока заряжаем ДО генерации: чанки применяют их при создании, иначе
-    // постройки восстановились бы только в тех чанках, что сгенерируются позже.
+    // Player edits are loaded BEFORE generation: chunks apply them on creation;
+    // otherwise buildings would only restore in chunks generated later.
     const saved = loadGame()
+    this.hasStoredSave = saved !== null
     const restorable = saved !== null && saved.seed === WORLD.seed
     if (restorable) {
       for (const [key, id] of Object.entries(saved.edits)) {
@@ -300,19 +317,23 @@ class Game {
       this.dayTime = saved.dayTime
     }
 
-    this.world.ensureAround(0, 0)
+    // Generate where the restored player actually is. Always generating the origin
+    // first leaves a distant save over unloaded void until the first live frame.
+    const initialX = restorable ? saved.player.x : 0.5
+    const initialZ = restorable ? saved.player.z : 0.5
+    this.world.ensureAround(initialX, initialZ)
     this.world.flushRemesh(25)
-    const y = this.world.surfaceY(0.5, 0.5)
-    this.spawnPoint.set(0.5, y, 0.5)
-    this.player.respawn(0.5, y, 0.5)
+    this.spawnPoint.set(0.5, this.world.groundY(0.5, 0.5), 0.5)
+    this.player.respawn(this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z)
 
     if (restorable) this.restore(saved)
+    this.night.restoreAtTime(this.dayFraction())
 
     this.rig.setTimeOfDay(this.dayFraction())
     this.rig.follow(this.player.position)
 
-    // Камера и HUD обновляются только в update(), а он не идёт на паузе. Без этого
-    // за стартовым экраном был бы пустой кадр вместо мира.
+    // The camera and the HUD only update in update(), which does not run while
+    // paused. Without this the start screen would sit over an empty frame.
     this.updateCamera()
     this.updatePlayerModel(0)
     this.hud.setHealth(this.player.health)
@@ -320,7 +341,7 @@ class Game {
     this.village.start()
   }
 
-  /** Восстанавливает партию. Мир к этому моменту уже собран с правками игрока. */
+  /** Restores a session. By now the world is already built with player edits. */
   private restore(saved: SaveData): void {
     this.player.position.set(saved.player.x, saved.player.y, saved.player.z)
     this.player.yaw = saved.player.yaw
@@ -328,23 +349,26 @@ class Game {
     this.player.health = saved.player.health
     restoreInventory(this.interact.inventory, saved.inventory)
 
-    // Стадию ставим до пересборки домов: иначе пятый дом снова запустил бы приход босса
-    // у игрока, который его уже победил.
+    // Set the stage before rebuilding houses: otherwise the fifth house would
+    // re-trigger the boss arrival for a player who has already beaten him.
     this.stage = saved.stage === 'won' ? 'won' : 'village'
 
-    // Дома пересобираем прогоном той же проверки, что и при обычной установке кроватки —
-    // отдельного формата для домов не держим, чтобы правила были ровно одни.
-    // Блок читаем из мира: в старых сохранениях кроватка одноклеточная, в новых — парная.
+    // Houses are rebuilt by running the same check as a regular bed placement —
+    // there is no separate save format for houses, so the rules stay singular.
+    // The block is read from the world: old saves hold single-cell beds, new ones pairs.
+    // Their chunks may be far from the saved player, so load the room neighborhood
+    // before validating it instead of treating unloaded voxels as open air.
+    for (const [x, , z] of saved.beds) this.world.ensureChunkAt(x, z)
     this.village.restoreProgress(saved.quest)
     for (const [x, y, z] of saved.beds) {
       this.village.handleBlockPlaced(x, y, z, this.world.getVoxel(x, y, z))
     }
     this.doors.rebuildFromEdits()
-    // Приведённые животные хранятся числом — расставляем их заново по деревне.
+    // Delivered animals are stored as a count — place them around the village anew.
     this.fauna.restoreDelivered(saved.quest.animals, this.village.center())
 
-    // Незаконченный бой не сохраняем: босс придёт заново, а не окажется полумёртвым
-    // и невидимым.
+    // An unfinished fight is not saved: the boss arrives fresh instead of
+    // popping in half-dead and invisible.
     if (saved.stage === 'boss' || saved.stage === 'boss-incoming') {
       this.stage = 'boss-incoming'
       this.bossCountdown = 6
@@ -390,7 +414,7 @@ class Game {
   start(): void {
     document.getElementById('loading')?.remove()
     this.showStart()
-    // Сохраняемся и при закрытии вкладки, а не только по таймеру.
+    // Save on tab close too, not only on the timer.
     window.addEventListener('beforeunload', () => {
       if (this.saveOnExit) saveGame(this.collectSave())
     })
@@ -399,12 +423,12 @@ class Game {
 
   private showStart(): void {
     this.paused = true
-    const hasSave = this.world.edits.size > 0
+    const hasSave = this.hasStoredSave
     const labels = hasSave ? ['Играть', 'Начать заново'] : ['Играть']
-    const [play, reset] = this.hud.showCard(START_CARD, labels)
+    const [play, reset] = this.hud.showCard(START_CARD, labels, 'start-card')
     play.addEventListener('click', () => this.resume())
     reset?.addEventListener('click', () => {
-      // Порядок важен: сначала запрещаем запись на выходе, потом чистим и перезагружаем.
+      // Order matters: forbid save-on-exit first, then clear and reload.
       this.saveOnExit = false
       clearSave()
       location.reload()
@@ -440,13 +464,17 @@ class Game {
   }
 
   /**
-   * После смерти игрок возвращается на точку спавна, а босс отходит к своей и успокаивается.
-   * Здоровье босса намеренно не восстанавливается: терять весь прогресс боя из-за одной
-   * ошибки — слишком суровое наказание для игры с таким настроением.
+   * After death the player returns to the spawn point and the boss backs off and
+   * calms down. Boss health deliberately does not reset: losing all fight progress
+   * to a single mistake is too harsh for a game with this mood.
    */
   private respawnAfterDeath(): void {
     this.combat.clear()
     this.night.scatter()
+    // A long boss chase can unload the original spawn. Recenter before asking
+    // surfaceY for collision geometry, or it returns the fallback height over void.
+    this.world.ensureAround(this.spawnPoint.x, this.spawnPoint.z)
+    this.world.flushRemesh(9)
     this.player.respawn(
       this.spawnPoint.x,
       this.world.surfaceY(this.spawnPoint.x, this.spawnPoint.z),
@@ -465,12 +493,12 @@ class Game {
     }
   }
 
-  /** Витрулян приходит из темноты в стороне от деревни. */
+  /** Vitrulyan arrives out of the dark, away from the village. */
   private spawnBoss(): void {
     const angle = Math.random() * Math.PI * 2
     const x = this.player.position.x + Math.cos(angle) * BOSS.spawnDistance
     const z = this.player.position.z + Math.sin(angle) * BOSS.spawnDistance
-    // Прогружаем чанки под боссом, иначе он появится над необсчитанной пустотой и упадёт.
+    // Preload chunks under the boss, or he would spawn over ungenerated void and fall.
     this.world.ensureAround(x, z)
     this.world.flushRemesh(9)
 
@@ -484,7 +512,7 @@ class Game {
       this.audio.bossSpit()
     }
     boss.onTremor = (position) => {
-      // Дрожь земли — телеграф подкопа: игрок видит, куда кролик вынырнет.
+      // Ground tremor telegraphs the burrow: the player sees where the rabbit surfaces.
       this.fx.burst(position, FX_COLORS.dust, 3, { speed: 2.2, size: 0.14, life: 0.4 })
     }
     boss.onRoar = (text) => {
@@ -511,7 +539,7 @@ class Game {
     const boss = this.boss
     if (boss === null) return
 
-    // Босс разлетается на безобидные цветные блоки — их можно забрать себе.
+    // The boss bursts into harmless colored blocks — free to collect.
     this.fx.burst(boss.center(new THREE.Vector3()), 0xd5b8ff, 40, {
       speed: 9,
       size: 0.4,
@@ -526,7 +554,7 @@ class Game {
     this.combat.clear()
 
     this.stage = 'won'
-    // Возвращаем день: победа должна ощущаться как рассвет.
+    // Bring the day back: victory should feel like a sunrise.
     this.dayTime = DAY.lengthSeconds * 0.12
     this.showWin()
   }
@@ -534,13 +562,13 @@ class Game {
   private resume(): void {
     this.hud.hideCard()
     this.paused = false
-    // Только из обработчика клика браузер разрешает запустить аудиоконтекст.
+    // Browsers only allow starting an audio context from a click handler.
     this.audio.unlock()
     this.controls.requestLock()
   }
 
   private readonly loop = (): void => {
-    // Ограничение шага: на просадке кадра длинный dt мог бы протащить игрока сквозь пол.
+    // Step clamp: on a frame hitch a long dt could drag the player through the floor.
     const dt = Math.min(this.clock.getDelta(), 1 / 30)
     if (!this.paused) this.update(dt)
     this.rig.render()
@@ -553,12 +581,12 @@ class Game {
 
     const wasOnGround = this.player.onGround
     this.player.update(dt, this.controls.input, this.world)
-    // Звук прыжка по факту отрыва от земли, а не по нажатию: в воздухе Space ничего не даёт.
+    // Jump sound on actual liftoff, not on key press: Space does nothing mid-air.
     if (wasOnGround && !this.player.onGround && this.player.velocity.y > 0) this.audio.jump()
 
     this.interact.update(dt, this.controls.attackHeld)
 
-    // Ночь: лимит врагов растёт со стадией квеста, чтобы первая ночь была обучающей.
+    // Night: the enemy cap grows with quest stage so the first night stays a tutorial.
     this.night.maxEnemies = this.village.completed
       ? NIGHT.maxEnemiesLate
       : this.village.stage >= 3
@@ -609,7 +637,7 @@ class Game {
       saveGame(this.collectSave())
     }
 
-    // Сверка дверных мешей с блоками: визуал никогда не должен врать про дверь.
+    // Reconcile door meshes with blocks: visuals must never lie about a door.
     this.doorAuditTimer -= dt
     if (this.doorAuditTimer <= 0) {
       this.doorAuditTimer = 1
@@ -631,7 +659,7 @@ class Game {
     this.hud.setBoss(!boss.dead, boss.healthFraction, boss.phase)
   }
 
-  /** Прогружает мир только при переходе в новый чанк, а не каждый кадр. */
+  /** Streams the world only when entering a new chunk, not every frame. */
   private streamChunks(): void {
     const cx = toChunkCoord(this.player.position.x)
     const cz = toChunkCoord(this.player.position.z)
@@ -644,7 +672,7 @@ class Game {
   private updatePlayerModel(dt: number): void {
     const model = this.playerModel
     model.group.position.copy(this.player.position)
-    // Перед модели смотрит в -Z, и в этой же системе задан yaw — поворот берётся напрямую.
+    // The model faces -Z and yaw is defined in the same frame — used directly.
     model.group.rotation.y = this.player.yaw
     const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z)
     model.animate(this.elapsed, speed, dt)
@@ -658,7 +686,7 @@ class Game {
       this.playerModel.group.visible = false
       camera.position.copy(head)
       camera.rotation.set(this.player.pitch, this.player.yaw, 0)
-      // Тряска нужна в обоих видах, поэтому прибавляется и здесь тоже.
+      // Shake applies in both camera modes, so it is added here as well.
       camera.position.add(this.fx.shake)
       return
     }
@@ -666,7 +694,7 @@ class Game {
     this.playerModel.group.visible = true
     this.player.lookDirection(this.back).negate()
 
-    // Поджимаем камеру, если позади стена: иначе она уезжает внутрь геометрии.
+    // Pull the camera in when a wall is behind: otherwise it dives into geometry.
     let distance: number = CAMERA.thirdPersonDistance
     const blocked = raycastVoxels(
       this.world.reader,
@@ -689,7 +717,7 @@ class Game {
     camera.position.add(this.fx.shake)
   }
 
-  /** Трогаем DOM только когда значения реально изменились. */
+  /** Touch the DOM only when values actually changed. */
   private refreshHud(): void {
     if (this.player.health !== this.lastHealth) {
       this.lastHealth = this.player.health
@@ -707,7 +735,7 @@ class Game {
   }
 }
 
-// Ссылку держим, чтобы игру не собрал сборщик мусора и её было видно из консоли.
+// Keep the reference so the game is not GC'd and stays reachable from the console.
 const game = new Game()
 game.start()
 Object.assign(window, { game, WORLD, PLAYER })

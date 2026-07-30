@@ -5,18 +5,19 @@ import { Block, isDoor, sealsRoom } from '../world/blocks'
 import type { World } from '../world/world'
 
 /**
- * Двери не рисуются мешером (куб не выглядит дверью), а живут отдельными мешами:
- * рама + полотно, при открытии полотно распахивается вокруг петли.
+ * Doors are not drawn by the mesher (a cube doesn't look like a door); they live as
+ * separate meshes: a frame plus a panel that swings around its hinge when opened.
  *
- * Ориентация у двери не хранится в id — она угадывается по стенам вокруг: полотно
- * встаёт вдоль ряда стены, в которой дверь стоит. Для нормально построенных домов
- * это всегда верно, а в чистом поле дверь просто смотрит по X.
+ * A door's orientation is not stored in the id — it is inferred from surrounding
+ * walls: the panel aligns with the wall run the door sits in. For normally built
+ * houses this is always right; in an open field the door just faces along X.
  */
 
 interface DoorVisual {
   group: THREE.Group
   hinge: THREE.Group
   open: boolean
+  wallAlongX: boolean
 }
 
 export class DoorVisuals {
@@ -31,15 +32,24 @@ export class DoorVisuals {
     scene.add(this.root)
   }
 
-  /** Зовётся после каждого изменения блока. Дёшево: почти всегда выходит сразу. */
+  /** Called after every block change. Cheap: nearly always exits immediately. */
   onBlockChanged(x: number, y: number, z: number): void {
-    // Дверь может появиться/исчезнуть в самой клетке или клеткой выше/ниже.
-    this.refreshCell(x, y, z)
-    this.refreshCell(x, y - 1, z)
-    this.refreshCell(x, y + 1, z)
+    // A door may occupy this column, or a neighboring wall may change its inferred
+    // orientation. Check both vertical halves around all five relevant columns.
+    for (const [dx, dz] of [
+      [0, 0],
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      this.refreshCell(x + dx, y - 1, z + dz)
+      this.refreshCell(x + dx, y, z + dz)
+      this.refreshCell(x + dx, y + 1, z + dz)
+    }
   }
 
-  /** Пересобирает двери по диффу игрока — нужно один раз после загрузки сохранения. */
+  /** Rebuilds doors from the player diff — needed once after loading a save. */
   rebuildFromEdits(): void {
     for (const key of this.doors.keys()) this.remove(key)
     for (const [key, id] of this.world.edits) {
@@ -61,23 +71,26 @@ export class DoorVisuals {
     }
 
     const open = id === Block.DoorOpen
+    const wallAlongX =
+      sealsRoom(this.world.getVoxel(x - 1, y, z)) || sealsRoom(this.world.getVoxel(x + 1, y, z))
     if (existing !== undefined) {
-      if (existing.open === open) return
-      // Пересобираем целиком: ориентация угадывается по стенам, а стены могли
-      // достроить уже после установки двери — иначе распахнутое полотно уходит
-      // в толщу стены и открытая дверь выглядит закрытой.
+      if (existing.open === open && existing.wallAlongX === wallAlongX) return
+      // Rebuild wholesale: orientation is inferred from walls, and walls may have
+      // been finished after the door was placed — otherwise the swung panel sinks
+      // into the wall and an open door looks closed.
       this.remove(key)
     }
 
-    const visual = this.build(x, y, z)
+    const visual = this.build(x, y, z, wallAlongX)
     this.setOpen(visual, open)
     this.doors.set(key, visual)
   }
 
   /**
-   * Страховочная сверка с блоками, раз в секунду из игрового цикла: если визуал
-   * и воксели разошлись (сломанная дверь с живой картинкой — худший случай:
-   * игрок думает, что заперт, а монстр проходит насквозь), картинка чинится сама.
+   * A safety reconciliation with blocks, once per second from the game loop: if the
+   * visual and the voxels diverge (a broken door with a live picture is the worst
+   * case: the player thinks they're safe while a monster walks through), the
+   * picture heals itself.
    */
   audit(): void {
     for (const key of [...this.doors.keys()]) {
@@ -91,11 +104,8 @@ export class DoorVisuals {
     }
   }
 
-  private build(x: number, y: number, z: number): DoorVisual {
-    // Полотно вдоль оси, по которой идут стены вокруг двери.
-    const wallAlongX =
-      sealsRoom(this.world.getVoxel(x - 1, y, z)) || sealsRoom(this.world.getVoxel(x + 1, y, z))
-
+  private build(x: number, y: number, z: number, wallAlongX: boolean): DoorVisual {
+    // The panel runs along the axis of the walls around the door.
     const group = new THREE.Group()
     group.position.set(x + 0.5, y, z + 0.5)
     if (!wallAlongX) group.rotation.y = Math.PI / 2
@@ -103,7 +113,7 @@ export class DoorVisuals {
     const material = new THREE.MeshLambertMaterial({ color: BLOCK_COLORS.door })
     const frameMaterial = new THREE.MeshLambertMaterial({ color: BLOCK_COLORS.doorDark })
 
-    // Рама: две стойки и перекладина.
+    // The frame: two posts and a lintel.
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(new RoundedBoxGeometry(0.12, 2.0, 0.16, 2, 0.04), frameMaterial)
       post.position.set(side * 0.44, 1.0, 0)
@@ -114,7 +124,7 @@ export class DoorVisuals {
     lintel.position.set(0, 1.95, 0)
     group.add(lintel)
 
-    // Полотно на петле у левой стойки.
+    // The panel hinged at the left post.
     const hinge = new THREE.Group()
     hinge.position.set(-0.38, 0, 0)
     const panel = new THREE.Mesh(new RoundedBoxGeometry(0.76, 1.84, 0.09, 2, 0.03), material)
@@ -122,7 +132,7 @@ export class DoorVisuals {
     panel.castShadow = true
     hinge.add(panel)
 
-    // Ручка, чтобы дверь читалась как дверь, а не доска.
+    // A knob so the door reads as a door, not a plank.
     const knob = new THREE.Mesh(
       new RoundedBoxGeometry(0.08, 0.08, 0.14, 2, 0.03),
       new THREE.MeshLambertMaterial({ color: 0xffe07a }),
@@ -132,12 +142,12 @@ export class DoorVisuals {
 
     group.add(hinge)
     this.root.add(group)
-    return { group, hinge, open: false }
+    return { group, hinge, open: false, wallAlongX }
   }
 
   private setOpen(visual: DoorVisual, open: boolean): void {
     visual.open = open
-    // Мгновенный поворот: анимация потребовала бы апдейта каждый кадр ради редкого события.
+    // Instant rotation: animating would need per-frame updates for a rare event.
     visual.hinge.rotation.y = open ? -1.85 : 0
   }
 

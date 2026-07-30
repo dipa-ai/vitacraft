@@ -8,7 +8,7 @@ function readerOf(cells: Record<string, Block>): VoxelReader {
 }
 
 describe('raycastVoxels', () => {
-  it('находит ближайший блок, а не первый попавшийся на луче', () => {
+  it('finds the nearest block, not an arbitrary one along the ray', () => {
     const reader = readerOf({ '5,0,0': Block.Stone, '8,0,0': Block.Dirt })
     const hit = raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)
 
@@ -17,47 +17,47 @@ describe('raycastVoxels', () => {
     expect(hit!.id).toBe(Block.Stone)
   })
 
-  it('возвращает нормаль грани, в которую вошёл луч', () => {
+  it('returns the normal of the entered face', () => {
     const reader = readerOf({ '5,0,0': Block.Stone })
-    // Летим по +X, значит попадаем в грань, смотрящую в -X.
+    // Flying along +X, so we hit the face looking toward -X.
     const fromWest = raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)
     expect([fromWest!.nx, fromWest!.ny, fromWest!.nz]).toEqual([-1, 0, 0])
 
-    // Сверху вниз — попадаем в верхнюю грань.
+    // Top-down — we hit the top face.
     const fromAbove = raycastVoxels(reader, 5.5, 9, 0.5, 0, -1, 0, 20)
     expect([fromAbove!.nx, fromAbove!.ny, fromAbove!.nz]).toEqual([0, 1, 0])
 
-    // И с востока — в грань, смотрящую в +X.
+    // And from the east — the face looking toward +X.
     const fromEast = raycastVoxels(reader, 12.5, 0.5, 0.5, -1, 0, 0, 20)
     expect([fromEast!.nx, fromEast!.ny, fromEast!.nz]).toEqual([1, 0, 0])
   })
 
-  it('нормаль указывает на пустую клетку, куда встанет новый блок', () => {
+  it('the normal points at the empty cell where a new block goes', () => {
     const reader = readerOf({ '5,0,0': Block.Stone })
     const hit = raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)!
-    // Установка идёт по нормали от найденного блока — там должно быть пусто.
+    // Placement goes along the normal from the hit block — it must be empty there.
     expect(reader(hit.x + hit.nx, hit.y + hit.ny, hit.z + hit.nz)).toBe(Block.Air)
   })
 
-  it('промахивается в пустоте', () => {
+  it('misses in a void', () => {
     expect(raycastVoxels(readerOf({}), 0.5, 0.5, 0.5, 1, 0, 0, 50)).toBeNull()
   })
 
-  it('не достаёт дальше заданной дистанции', () => {
+  it('does not reach past the given distance', () => {
     const reader = readerOf({ '10,0,0': Block.Stone })
     expect(raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 5)).toBeNull()
     expect(raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)).not.toBeNull()
   })
 
-  it('считает дистанцию в блоках и даёт точку попадания на грани', () => {
+  it('measures distance in blocks and yields the hit point on the face', () => {
     const reader = readerOf({ '5,0,0': Block.Stone })
     const hit = raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)!
-    // От x=0.5 до грани x=5 ровно 4.5.
+    // From x=0.5 to the face at x=5 is exactly 4.5.
     expect(hit.distance).toBeCloseTo(4.5, 6)
     expect(hit.px).toBeCloseTo(5, 6)
   })
 
-  it('работает на диагональном луче', () => {
+  it('works on a diagonal ray', () => {
     const reader = readerOf({ '4,4,0': Block.Stone })
     const s = Math.SQRT1_2
     const hit = raycastVoxels(reader, 0.5, 0.5, 0.5, s, s, 0, 30)
@@ -66,7 +66,7 @@ describe('raycastVoxels', () => {
     expect(hit!.y).toBe(4)
   })
 
-  it('пропускает блоки, отсеянные фильтром цели', () => {
+  it('skips blocks rejected by the target filter', () => {
     const reader = readerOf({ '3,0,0': Block.Water, '7,0,0': Block.Stone })
     const throughWater = raycastVoxels(
       reader,
@@ -79,23 +79,23 @@ describe('raycastVoxels', () => {
       20,
       (id) => id !== Block.Air && id !== Block.Water,
     )
-    // Луч должен пройти воду насквозь и упереться в камень.
+    // The ray must pass through water and stop at stone.
     expect(throughWater!.x).toBe(7)
     expect(throughWater!.id).toBe(Block.Stone)
 
-    // А фильтр по умолчанию остановится уже на воде.
+    // While the default filter stops at the water already.
     expect(raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)!.x).toBe(3)
   })
 
-  it('луч из блока сразу попадает в него и не даёт нормали для установки', () => {
+  it('a ray from inside a block hits it at once with no placement normal', () => {
     const reader = readerOf({ '0,0,0': Block.Stone })
     const hit = raycastVoxels(reader, 0.5, 0.5, 0.5, 1, 0, 0, 20)!
     expect(hit.distance).toBe(0)
-    // Нулевая нормаль — сигнал вызывающему, что грани для установки нет.
+    // A zero normal signals the caller there is no face to place against.
     expect([hit.nx, hit.ny, hit.nz]).toEqual([0, 0, 0])
   })
 
-  it('одинаково работает на отрицательных координатах', () => {
+  it('works the same on negative coordinates', () => {
     const reader = readerOf({ '-5,-3,-2': Block.Stone })
     const hit = raycastVoxels(reader, -0.5, -2.5, -1.5, -1, 0, 0, 20)
     expect(hit).not.toBeNull()

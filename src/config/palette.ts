@@ -1,10 +1,10 @@
 /**
- * Единственный источник правды по цветам. Раз текстур в игре нет, вся «миленькость»
- * держится на этой палитре, на запечённом AO в мешере и на свете — так что подкручивать
- * внешний вид игры надо здесь, а не по коду.
+ * The single source of truth for colors. Since the game has no textures, all of its
+ * cuteness rests on this palette, on baked AO in the mesher and on lighting — so tune
+ * the game's look here, not across the code.
  */
 
-/** Пастельные цвета блоков мира. */
+/** Pastel colors of world blocks. */
 export const BLOCK_COLORS = {
   grassTop: 0x9ee493,
   grassSide: 0x8bd583,
@@ -35,11 +35,11 @@ export const BLOCK_COLORS = {
   lantern: 0xffcf7d,
 } as const
 
-/** Небо, туман и свет — днём и ночью. Между ними интерполируем в цикле дня. */
+/** Sky, fog and light — day and night. The day cycle interpolates between them. */
 export const SKY = {
   day: {
     top: 0x6fc6f5,
-    // Горизонт держим чуть насыщеннее, иначе даль сливается в белое пятно.
+    // Keep the horizon slightly saturated, or the distance washes out to white.
     bottom: 0xffd8e8,
     fog: 0xdce9f7,
     sun: 0xfff6e0,
@@ -64,7 +64,7 @@ export const SKY = {
   },
 } as const
 
-/** Цвета существ. */
+/** Creature colors. */
 export const CREATURE_COLORS = {
   smurfBody: 0x6fb7e8,
   smurfSkin: 0x9fd8ff,
@@ -74,7 +74,7 @@ export const CREATURE_COLORS = {
   playerBody: 0xffc48a,
   playerShirt: 0x7fc9a0,
   playerPants: 0x6a7fc0,
-  // Витрулян — рыжий кролик.
+  // Vitrulyan is a ginger rabbit.
   bossFur: 0xeb9a5f,
   bossFurDark: 0xcf7d43,
   bossBelly: 0xffeeda,
@@ -85,11 +85,11 @@ export const CREATURE_COLORS = {
   bossMouth: 0xff7d9c,
   bossTooth: 0xfffdf7,
   bossGlow: 0xffe1f4,
-  // Ночные зверюшки.
+  // Night critters.
   lurkerBody: 0x4b4364,
   lurkerBodyDark: 0x3a3450,
   lurkerEye: 0xffd9f2,
-  // Дневная живность.
+  // Daytime wildlife.
   rabbitFur: 0xe3d5c4,
   rabbitEar: 0xffc9d4,
   sheepWool: 0xfdf4ec,
@@ -98,7 +98,7 @@ export const CREATURE_COLORS = {
   birdBeak: 0xff9d4d,
 } as const
 
-/** Цвета эффектов и интерфейса. */
+/** Effect and UI colors. */
 export const FX_COLORS = {
   heart: 0xff7d9c,
   sparkle: 0xfff3b0,
@@ -109,13 +109,13 @@ export const FX_COLORS = {
   hitFlash: 0xffffff,
 } as const
 
-/** Множители яркости для запечённого AO: индекс 0 — самый затенённый угол, 3 — открытый. */
+/** Brightness multipliers for baked AO: index 0 is the darkest corner, 3 is open. */
 export const AO_LEVELS = [0.55, 0.72, 0.87, 1.0] as const
 
 /**
- * Подкраска граней по направлению. Даёт объём даже до расчёта света — без неё
- * однотонные блоки читаются плоско. Значения нарочно разнесены: если сделать
- * противоположные грани близкими, соседние блоки сливаются в одно пятно.
+ * Per-direction face tinting. Gives volume even before lighting — without it
+ * flat-colored blocks read as flat. Values are deliberately spread apart: with
+ * close opposite faces, neighboring blocks merge into a single blob.
  */
 export const FACE_TINT = {
   top: 1.0,

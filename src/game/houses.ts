@@ -3,26 +3,26 @@ import { isBed, sealsRoom } from '../world/blocks'
 import type { VoxelReader } from '../world/mesher'
 
 /**
- * Проверка «это домик для смурфика?».
+ * The "is this a smurf house?" check.
  *
- * Игрок строит стены и крышу как хочет, а внутрь ставит грибную кроватку. Дальше от
- * кроватки запускается flood-fill: если воздух никуда не утекает и уложился в лимит —
- * комната герметична, и смурфик заселяется.
+ * The player builds walls and a roof however they like and puts a mushroom bed
+ * inside. A flood-fill then runs from the bed: if the air escapes nowhere and fits
+ * the budget, the room is sealed and a smurf moves in.
  *
- * Лимит здесь и есть определение «замкнутости»: считать связную область до конца нельзя,
- * потому что снаружи она бесконечна. Вышли за лимит — значит где-то дует.
+ * The budget IS the definition of "sealed": the connected region cannot be counted
+ * to completion because outside it is infinite. Exceeding the budget means a draft.
  *
- * Стеной считается то, что «запечатывает» (sealsRoom), а не то, что твёрдое: стекло —
- * стена (окна можно), дверь — стена в ОБОИХ положениях (иначе дверей не могло бы быть),
- * а вода — не стена: дом из воды не держит.
+ * A wall is whatever "seals" (sealsRoom), not whatever is solid: glass is a wall
+ * (windows allowed), a door is a wall in BOTH states (doors couldn't exist
+ * otherwise), and water is not a wall: a house of water holds nothing.
  */
 
 export type RoomFailure =
-  /** На указанном месте нет кроватки. */
+  /** No bed at the given spot. */
   | 'no-bed'
-  /** Воздух утекает наружу: нет крыши, дыра в стене или открытый проём. */
+  /** Air escapes outside: no roof, a hole in a wall, or an open gap. */
   | 'leaks'
-  /** Замкнуто, но внутри слишком тесно, чтобы называть это домом. */
+  /** Sealed, but too cramped inside to call it a house. */
   | 'too-small'
 
 export interface RoomCell {
@@ -33,10 +33,10 @@ export interface RoomCell {
 
 export interface RoomResult {
   ok: boolean
-  /** Число внутренних клеток комнаты. */
+  /** Number of interior room cells. */
   volume: number
   reason: RoomFailure | null
-  /** Клетки комнаты. Пусто, если комната не прошла проверку. */
+  /** The room's cells. Empty when the room failed the check. */
   cells: RoomCell[]
 }
 
@@ -53,7 +53,7 @@ function fail(reason: RoomFailure, volume = 0): RoomResult {
   return { ok: false, volume, reason, cells: [] }
 }
 
-/** Человеческое объяснение отказа — уходит игроку репликой. */
+/** Human explanation of the failure — delivered to the player as a toast. */
 export function explainFailure(reason: RoomFailure): string {
   switch (reason) {
     case 'no-bed':
@@ -66,7 +66,7 @@ export function explainFailure(reason: RoomFailure): string {
 }
 
 /**
- * @param bedX координаты клетки с кроваткой.
+ * @param bedX coordinates of the bed cell.
  */
 export function validateRoom(
   reader: VoxelReader,
@@ -74,7 +74,7 @@ export function validateRoom(
   bedY: number,
   bedZ: number,
 ): RoomResult {
-  // Стартовать можно с любой половины кроватки — и со старой одноклеточной тоже.
+  // Any bed half works as a start — the legacy single-cell bed too.
   if (!isBed(reader(bedX, bedY, bedZ))) return fail('no-bed')
 
   const visited = new Set<string>([`${bedX},${bedY},${bedZ}`])
@@ -93,16 +93,16 @@ export function validateRoom(
       const key = `${x},${y},${z}`
       if (visited.has(key)) continue
 
-      // Герметичность проверяется до границ мира, и порядок здесь важен: пол дома,
-      // лежащий на самом нижнем слое, — это стена, а не утечка.
+      // Sealing is checked before world bounds, and the order matters: a house
+      // floor resting on the bottom layer is a wall, not a leak.
       if (sealsRoom(reader(x, y, z))) continue
 
-      // А вот проходимая клетка за пределами мира по вертикали — настоящая дыра:
-      // выше потолка мира и ниже дна стен нет.
+      // A passable cell beyond the world's vertical bounds is a real hole though:
+      // there are no walls above the world ceiling or below its floor.
       if (y < 0 || y >= WORLD.chunkSizeY) return fail('leaks', cells.length)
 
       visited.add(key)
-      // Область разрослась сверх лимита — значит она соединена с улицей.
+      // The region outgrew the budget — it must connect to the outside.
       if (visited.size > VILLAGE.floodFillBudget) return fail('leaks', visited.size)
       queue.push({ x, y, z })
     }
@@ -115,8 +115,8 @@ export function validateRoom(
 }
 
 /**
- * Средняя точка комнаты по горизонтали и её пол — куда ставить смурфика,
- * когда он заселяется.
+ * The room's horizontal midpoint and its floor — where to put the smurf
+ * when it moves in.
  */
 export function roomCenter(cells: readonly RoomCell[]): RoomCell {
   let sumX = 0

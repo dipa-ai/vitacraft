@@ -3,28 +3,28 @@ import { PLAYER } from '../config/tuning'
 import { isWater, type Block } from '../world/blocks'
 
 /**
- * Всё, что физике игрока нужно от мира. World удовлетворяет этому интерфейсу структурно,
- * а тесты могут подсунуть крошечную сцену из пары блоков вместо целого террагена.
+ * Everything player physics needs from the world. World satisfies this structurally,
+ * while tests can supply a tiny two-block scene instead of a whole terrain generator.
  */
 export interface CollisionSource {
   getVoxel(x: number, y: number, z: number): Block
   isSolidAt(x: number, y: number, z: number): boolean
 }
 
-/** Что игрок хочет сделать в этом кадре. Заполняется в controls.ts. */
+/** What the player wants to do this frame. Filled in by controls.ts. */
 export interface MoveInput {
-  /** -1 назад, +1 вперёд. */
+  /** -1 backward, +1 forward. */
   forward: number
-  /** -1 влево, +1 вправо. */
+  /** -1 left, +1 right. */
   right: number
   jump: boolean
   run: boolean
 }
 
 const HALF = PLAYER.width / 2
-/** Отступ, чтобы после упора игрок не оставался ровно в плоскости блока. */
+/** Margin so the player doesn't end up exactly in a block's plane after a stop. */
 const EPS = 1e-3
-/** Максимальный шаг интегрирования в блоках: защита от проскока сквозь стену на лагах. */
+/** Max integration step in blocks: guards against tunneling through walls on lag. */
 const MAX_STEP = 0.25
 
 interface Bounds {
@@ -37,33 +37,33 @@ interface Bounds {
 }
 
 /**
- * Игрок как AABB-капсула в воксельной сетке. Позиция — центр ступней: по X и Z центр
- * коробки, по Y её низ.
+ * The player as an AABB in the voxel grid. Position is the feet center: box center
+ * on X and Z, box bottom on Y.
  *
- * Столкновения разрешаются по каждой оси отдельно. Если двигать и разрешать всё сразу,
- * игрок застревает во внутренних углах и не может скользить вдоль стены.
+ * Collisions resolve per axis. Moving and resolving everything at once makes the
+ * player stick in inner corners and unable to slide along walls.
  */
 export class Player {
   readonly position = new THREE.Vector3()
   readonly velocity = new THREE.Vector3()
 
-  /** Направление взгляда. Им же поворачивается модель в третьем лице. */
+  /** Look direction. Also used to rotate the third-person model. */
   yaw = 0
   pitch = 0
 
   onGround = false
   inWater = false
-  // Явная аннотация обязательна: значения в tuning.ts помечены as const, и без неё
-  // тип сузился бы до литерала и запретил любое другое количество здоровья.
+  // The explicit annotation is required: tuning.ts values are as const, and without
+  // it the type would narrow to a literal and forbid any other health value.
   health: number = PLAYER.maxHealth
-  /** Остаток неуязвимости после получения урона, секунды. */
+  /** Remaining invulnerability after taking damage, seconds. */
   invulnerable = 0
   dead = false
 
-  /** Сколько прошло с последнего урона — от этого зависит регенерация. */
+  /** Time since the last hit — regeneration depends on it. */
   private sinceDamage = Infinity
   private regenAccumulator = 0
-  /** Зовётся при восстановлении сердечка — HUD может отреагировать. */
+  /** Called when a heart regenerates — the HUD may react. */
   onRegen: (() => void) | null = null
 
   respawn(x: number, y: number, z: number): void {
@@ -76,12 +76,12 @@ export class Player {
     this.regenAccumulator = 0
   }
 
-  /** Позиция глаз — она же позиция камеры в первом лице. */
+  /** Eye position — also the first-person camera position. */
   eyePosition(target: THREE.Vector3): THREE.Vector3 {
     return target.set(this.position.x, this.position.y + PLAYER.eyeHeight, this.position.z)
   }
 
-  /** Направление взгляда как единичный вектор. */
+  /** Look direction as a unit vector. */
   lookDirection(target: THREE.Vector3): THREE.Vector3 {
     const cosPitch = Math.cos(this.pitch)
     return target
@@ -101,7 +101,7 @@ export class Player {
     }
   }
 
-  /** Наносит урон с учётом неуязвимости. Возвращает true, если удар прошёл. */
+  /** Applies damage honoring invulnerability. Returns true if the hit landed. */
   takeDamage(amount: number): boolean {
     if (this.dead || this.invulnerable > 0) return false
     this.health = Math.max(0, this.health - amount)
@@ -116,8 +116,8 @@ export class Player {
     if (this.invulnerable > 0) this.invulnerable = Math.max(0, this.invulnerable - dt)
     this.regenerate(dt)
 
-    // Плаваем, когда в воде середина тела, а не только ступни: иначе на мелководье
-    // игрок то плывёт, то идёт.
+    // Swim when mid-body is in water, not just the feet: in shallows the player
+    // would otherwise flip between swimming and walking.
     this.inWater = isWater(
       world.getVoxel(this.position.x, this.position.y + PLAYER.height * 0.5, this.position.z),
     )
@@ -127,7 +127,7 @@ export class Player {
     this.onGround = this.probeGround(world)
   }
 
-  /** Сердечки восстанавливаются сами — но не сразу после удара, чтобы бой оставался боем. */
+  /** Hearts regenerate on their own — but not right after a hit, so combat stays combat. */
   private regenerate(dt: number): void {
     if (this.dead || this.health >= PLAYER.maxHealth) return
     this.sinceDamage += dt
@@ -141,7 +141,7 @@ export class Player {
   }
 
   private applyMovement(dt: number, input: MoveInput): void {
-    // Ось Z смотрит назад — так устроена камера в three.js, поэтому «вперёд» отрицательное.
+    // The Z axis points backward — that's how three.js cameras work, so forward is negative.
     const sin = Math.sin(this.yaw)
     const cos = Math.cos(this.yaw)
     let wishX = -sin * input.forward + cos * input.right
@@ -159,14 +159,14 @@ export class Player {
         ? PLAYER.runSpeed
         : PLAYER.walkSpeed
 
-    // В воздухе разгон слабее, чем на земле: прыжок перестаёт быть свободным полётом.
+    // Weaker acceleration mid-air than on the ground: jumping is not free flight.
     const accel = this.onGround || this.inWater ? 14 : 4
     const blend = Math.min(1, accel * dt)
     this.velocity.x += (wishX * speed - this.velocity.x) * blend
     this.velocity.z += (wishZ * speed - this.velocity.z) * blend
 
     if (this.inWater) {
-      // Вода тормозит падение и слегка выталкивает наверх.
+      // Water slows the fall and gently pushes upward.
       this.velocity.y += (PLAYER.swimBuoyancy - PLAYER.gravity * 0.42) * dt
       this.velocity.y *= 0.92
       if (input.jump) this.velocity.y = PLAYER.swimSpeed
@@ -175,13 +175,13 @@ export class Player {
       if (input.jump && this.onGround) this.velocity.y = PLAYER.jumpSpeed
     }
 
-    // Ограничение скорости падения, чтобы на любом кадре не проскочить сквозь пол.
+    // Cap fall speed so no frame can tunnel through the floor.
     this.velocity.y = Math.max(this.velocity.y, -55)
   }
 
   /**
-   * Двигает игрока подшагами. Один длинный шаг на просадке кадра мог бы перескочить
-   * блок целиком, и игрок провалился бы через пол.
+   * Moves the player in substeps. One long step on a frame hitch could skip a whole
+   * block and drop the player through the floor.
    */
   private integrate(dt: number, world: CollisionSource): void {
     const longest =
@@ -262,8 +262,8 @@ export class Player {
     } else {
       const ty = Math.floor(b.minY)
       if (anySolid(world, x0, x1, ty, ty, z0, z1)) {
-        // Ставим ровно на поверхность блока: onGround отдельно проверяется зондом ниже,
-        // поэтому зазор здесь только помешал бы.
+        // Land exactly on the block surface: onGround is probed separately below,
+        // so a gap here would only get in the way.
         this.position.y = ty + 1
         this.velocity.y = 0
       }
@@ -271,8 +271,9 @@ export class Player {
   }
 
   /**
-   * Отдельный зонд опоры чуть ниже ступней. Судить о земле по факту столкновения нельзя:
-   * стоя ровно на блоке, игрок формально ни с чем не пересекается, и onGround мерцал бы.
+   * A separate support probe just below the feet. Ground cannot be judged from
+   * collisions: standing exactly on a block, the player overlaps nothing, and
+   * onGround would flicker.
    */
   private probeGround(world: CollisionSource): boolean {
     if (this.velocity.y > 0.01) return false
@@ -289,7 +290,7 @@ export class Player {
     )
   }
 
-  /** Пересекает ли коробка игрока хоть один твёрдый блок в текущей позиции. */
+  /** Whether the player box overlaps any solid block at the current position. */
   intersectsSolid(world: CollisionSource): boolean {
     const b = this.bounds()
     return anySolid(
@@ -304,7 +305,7 @@ export class Player {
   }
 }
 
-/** Есть ли твёрдый блок в целочисленном диапазоне (границы включительно). */
+/** Whether any solid block exists in the integer range (bounds inclusive). */
 function anySolid(
   world: CollisionSource,
   x0: number,
@@ -324,7 +325,7 @@ function anySolid(
   return false
 }
 
-/** Пересекается ли коробка игрока с конкретным блоком — нужно, чтобы не замуровать себя. */
+/** Whether the player box overlaps a specific block — prevents self-entombment. */
 export function playerOverlapsBlock(
   position: THREE.Vector3,
   bx: number,

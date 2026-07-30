@@ -1,7 +1,7 @@
 import { PLAYER } from '../config/tuning'
 import { ALL_BLOCKS, type Block, blockDef } from '../world/blocks'
 
-/** Работа с DOM-оверлеем: сердечки, хотбар, задания, реплики и полноэкранные карточки. */
+/** DOM overlay: hearts, hotbar, quests, speech toasts and full-screen cards. */
 export class Hud {
   private readonly heartsEl = requireEl('hearts')
   private readonly hotbarEl = requireEl('hotbar')
@@ -17,13 +17,14 @@ export class Hud {
   private readonly overlayCardEl = requireEl('overlay-card')
   private readonly vignetteEl = requireEl('vignette')
   private readonly resourcesEl = requireEl('resources')
+  private readonly helpEl = requireEl('help')
   private readonly itemLabelEl = requireEl('itemlabel')
   private itemLabelTimer = 0
 
   private heartEls: HTMLElement[] = []
   private slotEls: HTMLElement[] = []
   private lastHealth: number = PLAYER.maxHealth
-  /** Реплики, показанные однажды: подсказки не должны повторяться при каждой ошибке. */
+  /** Lines shown once: hints must not repeat on every mistake. */
   private readonly shownOnce = new Set<string>()
 
   constructor() {
@@ -31,7 +32,7 @@ export class Hud {
     this.buildResources()
   }
 
-  /** Панель ресурсов (Tab): собирается из описаний в реестре блоков. */
+  /** Resources panel (Tab): assembled from descriptions in the block registry. */
   private buildResources(): void {
     const list = this.resourcesEl.querySelector<HTMLElement>('.list')!
     list.textContent = ''
@@ -65,6 +66,7 @@ export class Hud {
 
   toggleResources(): boolean {
     const visible = this.resourcesEl.classList.toggle('show')
+    if (visible) this.hideHelp()
     return visible
   }
 
@@ -72,14 +74,36 @@ export class Hud {
     return this.resourcesEl.classList.contains('show')
   }
 
-  /** Прокрутка панели ресурсов колесом: в pointer lock скроллбар мышью не ухватить. */
+  /** Wheel-scrolls the resources panel: in pointer lock the scrollbar can't be grabbed. */
   scrollResources(delta: number): void {
     this.resourcesEl.scrollTop += delta
   }
 
+  setHelpContent(html: string): void {
+    this.helpEl.innerHTML = html
+  }
+
+  toggleHelp(): boolean {
+    const visible = this.helpEl.classList.toggle('show')
+    if (visible) this.hideResources()
+    return visible
+  }
+
+  get helpOpen(): boolean {
+    return this.helpEl.classList.contains('show')
+  }
+
+  scrollHelp(delta: number): void {
+    this.helpEl.scrollTop += delta
+  }
+
+  hideHelp(): void {
+    this.helpEl.classList.remove('show')
+  }
+
   /**
-   * Подпись выбранного предмета над хотбаром. В pointer lock курсора нет, тултипы
-   * не работают — это единственный способ объяснить, что сейчас в руке.
+   * Selected-item label above the hotbar. There is no cursor in pointer lock and
+   * tooltips don't work — this is the only way to explain what is in hand.
    */
   showItemName(name: string, description?: string): void {
     this.itemLabelEl.textContent = name
@@ -111,7 +135,7 @@ export class Hud {
     }
   }
 
-  /** Строит слоты хотбара один раз; дальше меняются только количества и подсветка. */
+  /** Builds hotbar slots once; only counts and highlight change afterwards. */
   buildHotbar(blocks: readonly Block[]): void {
     this.hotbarEl.textContent = ''
     this.slotEls = []
@@ -123,7 +147,7 @@ export class Hud {
 
       const key = document.createElement('span')
       key.className = 'key'
-      // Цифрами выбираются только первые девять слотов; дальше — колесом.
+      // Digits select only the first nine slots; the rest is wheel-only.
       key.textContent = index < 9 ? String(index + 1) : ''
 
       const swatch = document.createElement('div')
@@ -155,7 +179,7 @@ export class Hud {
     this.heartEls.forEach((heart, index) => {
       heart.classList.toggle('empty', index >= health)
     })
-    // Пульс только при потере здоровья — иначе сердечки дёргаются без причины.
+    // Pulse only on health loss — otherwise hearts twitch for no reason.
     if (health < this.lastHealth) {
       const lost = this.heartEls[Math.max(0, health)]
       lost?.classList.add('pulse')
@@ -166,7 +190,7 @@ export class Hud {
     this.lastHealth = health
   }
 
-  /** Прицел раздувается, когда под ним есть цель — понятно, докуда дотягивается рука. */
+  /** The crosshair inflates over a target — showing how far the arm reaches. */
   setCrosshairActive(active: boolean): void {
     this.crosshairEl.classList.toggle('hit', active)
   }
@@ -187,7 +211,7 @@ export class Hud {
     this.bossPhaseEl.textContent = `Фаза ${phase}`
   }
 
-  /** Короткая реплика внизу экрана. */
+  /** A short toast at the bottom of the screen. */
   toast(text: string, durationMs = 3200): void {
     const el = document.createElement('div')
     el.className = 'toast'
@@ -199,7 +223,7 @@ export class Hud {
     }, durationMs)
   }
 
-  /** Реплика, которая показывается только в первый раз — для подсказок. */
+  /** A toast shown only the first time — for hints. */
   toastOnce(id: string, text: string, durationMs = 4200): void {
     if (this.shownOnce.has(id)) return
     this.shownOnce.add(id)
@@ -207,10 +231,13 @@ export class Hud {
   }
 
   /**
-   * Полноэкранная карточка. Возвращает кнопки в том же порядке, что и подписи, — что делать
-   * по нажатию, решает вызывающий.
+   * Full-screen card. Returns buttons in label order — the caller decides what
+   * each click does.
    */
-  showCard(html: string, buttonLabels: readonly string[]): HTMLButtonElement[] {
+  showCard(html: string, buttonLabels: readonly string[], variant?: string): HTMLButtonElement[] {
+    this.hideResources()
+    this.hideHelp()
+    this.overlayCardEl.className = variant === undefined ? 'card' : `card ${variant}`
     this.overlayCardEl.innerHTML = html
     const row = document.createElement('div')
     row.style.display = 'flex'
@@ -222,7 +249,7 @@ export class Hud {
       const button = document.createElement('button')
       button.className = 'btn'
       button.textContent = label
-      // Второстепенные действия делаем визуально тише, чтобы главное читалось сразу.
+      // Secondary actions are visually quieter so the primary one reads instantly.
       if (index > 0) {
         button.style.background = '#fff'
         button.style.color = 'var(--ink)'
@@ -249,6 +276,6 @@ export class Hud {
 
 function requireEl(id: string): HTMLElement {
   const el = document.getElementById(id)
-  if (el === null) throw new Error(`В разметке нет элемента #${id}`)
+  if (el === null) throw new Error(`Missing element #${id} in the markup`)
   return el
 }

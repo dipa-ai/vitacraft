@@ -10,27 +10,27 @@ const SIZES: Record<AnimalKind, { radius: number; height: number; speed: number 
   chick: { radius: 0.15, height: 0.4, speed: 2.0 },
 }
 
-/** Что животному нужно знать о мире в этом кадре. */
+/** What an animal needs to know about the world this frame. */
 export interface AnimalContext {
-  /** Позиция игрока, если у него в руке морковка, — иначе null. */
+  /** The player's position when holding a carrot — null otherwise. */
   carrotHolder: THREE.Vector3 | null
-  /** Ближайший ночной враг — от него животное бежит. */
+  /** The nearest night enemy — the animal flees from it. */
   threat: THREE.Vector3 | null
 }
 
 /**
- * Дневная живность: пасётся у своей точки, бежит от ночных врагов и идёт за морковкой
- * в руках игрока — так животных приводят в деревню.
+ * Daytime wildlife: grazes around its spot, flees night enemies and follows a carrot
+ * in the player's hand — that is how animals get led to the village.
  */
 export class Animal extends Entity {
-  /** Точка выпаса. После приведения в деревню переезжает туда. */
+  /** Grazing anchor. Moves to the village once the animal is delivered. */
   readonly home = new THREE.Vector3()
   delivered = false
 
   private readonly target = new THREE.Vector3()
   private waitTimer = 0
   private hopTimer = 0
-  /** Не дошли до цели за это время — цель плохая (за стеной), выбираем новую. */
+  /** Didn't reach the target in time — it is bad (behind a wall); pick a new one. */
   private targetTimeout = 0
 
   constructor(
@@ -49,7 +49,7 @@ export class Animal extends Entity {
     const speed = SIZES[this.kind].speed
 
     if (ctx.threat !== null && this.horizontalDistance(ctx.threat) < 7) {
-      // Бежим прочь от угрозы — прямо от неё, скорость с перепугу выше.
+      // Run away from the threat — straight away, faster out of fright.
       const away = this.target
         .subVectors(this.position, ctx.threat)
         .setY(0)
@@ -63,13 +63,13 @@ export class Animal extends Entity {
       this.horizontalDistance(ctx.carrotHolder) < VILLAGE.animalFollowRadius &&
       this.horizontalDistance(ctx.carrotHolder) > 1.7
     ) {
-      // Морковка! Идём за игроком.
+      // A carrot! Follow the player.
       this.walkTo(ctx.carrotHolder.x, ctx.carrotHolder.z, speed * 1.25, dt)
     } else {
       this.graze(dt, world, speed)
     }
 
-    // Кролики и цыплята передвигаются прыжками — это почти вся их «милота».
+    // Bunnies and chicks move in hops — that is most of their cuteness.
     this.hopTimer -= dt
     const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.3
     if (moving && this.onGround && this.hopTimer <= 0 && this.kind !== 'sheep') {
@@ -89,8 +89,9 @@ export class Animal extends Entity {
       return
     }
 
-    // Дом переселённого зверя — у центра деревни, и цель выпаса легко выпадает внутри
-    // домика. Валидация плюс таймаут не дают зверю вечно тыкаться лбом в стену.
+    // A delivered animal's anchor sits near the village center, so graze targets
+    // easily land inside a house. Validation plus a timeout keep the animal from
+    // headbutting a wall forever.
     this.targetTimeout -= dt
     if (this.horizontalDistance(this.target) < 0.8 || this.targetTimeout <= 0) {
       this.waitTimer = 1.5 + Math.random() * 3
@@ -101,7 +102,7 @@ export class Animal extends Entity {
       const tz = this.home.z + Math.sin(angle) * distance
       const ty = world.groundY(tx, tz)
       if (world.isSolidAt(tx, ty, tz) || world.isSolidAt(tx, ty + 1, tz)) {
-        // Точка в стене — постоим и бросим кубик заново.
+        // The point is inside a wall — wait a bit and reroll.
         this.targetTimeout = 0
         return
       }

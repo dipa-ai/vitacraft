@@ -31,7 +31,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t)
 }
 
-/** Доля «ночи» в текущий момент суток: 0 — полный день, 1 — глухая ночь. */
+/** Night fraction at the current time of day: 0 is full day, 1 is dead of night. */
 export function nightness(dayFraction: number): number {
   const dusk = smoothstep(DAY.nightStart - 0.1, DAY.nightStart + 0.03, dayFraction)
   const dawn = 1 - smoothstep(0.92, 1.0, dayFraction)
@@ -39,9 +39,9 @@ export function nightness(dayFraction: number): number {
 }
 
 /**
- * Держит рендерер, камеру, свет и небо. Вся «красота» настраивается здесь и в palette.ts:
- * мягкие тени, тёплый ambient, туман в цвет горизонта и градиентное небо, которое
- * растворяет даль вместо резкого обрыва мира.
+ * Owns the renderer, camera, lights and sky. All of the prettiness is tuned here and
+ * in palette.ts: soft shadows, warm ambient, horizon-colored fog and a gradient sky
+ * that dissolves the distance instead of cutting the world off.
  */
 export class SceneRig {
   readonly scene = new THREE.Scene()
@@ -61,10 +61,10 @@ export class SceneRig {
   private readonly fog: THREE.FogExp2
   private readonly composer: EffectComposer
   private readonly bloom: UnrealBloomPass
-  /** Блум выключаем при просадке производительности или если он мешает картинке. */
+  /** Bloom can be disabled on performance drops or when it hurts the image. */
   bloomEnabled = true
 
-  // Переиспользуемые цвета, чтобы цикл дня не аллоцировал по кадру.
+  // Reusable colors so the day cycle does not allocate per frame.
   private readonly tmpA = new THREE.Color()
   private readonly tmpB = new THREE.Color()
 
@@ -73,7 +73,7 @@ export class SceneRig {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.shadowMap.enabled = true
-    // Мягкие края теней — важная часть «миленького» вида.
+    // Soft shadow edges are a key part of the cute look.
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.05
@@ -84,11 +84,11 @@ export class SceneRig {
       CAMERA.near,
       CAMERA.far,
     )
-    // Камера в сцене обязательна, чтобы рендерились её дети — руки от первого лица.
+    // The camera must be in the scene for its children — first-person hands — to render.
     this.scene.add(this.camera)
 
-    // Плотность подобрана под WORLD.viewRadius: на границе прогруженной области туман
-    // должен уже почти полностью скрывать геометрию, иначе виден обрыв мира.
+    // Density is matched to WORLD.viewRadius: at the loaded-area border fog must
+    // almost fully hide geometry, or the world's edge shows.
     this.fog = new THREE.FogExp2(SKY.day.fog, 0.01)
     this.scene.fog = this.fog
 
@@ -105,7 +105,7 @@ export class SceneRig {
     this.sun = new THREE.DirectionalLight(SKY.day.sun, SKY.day.sunIntensity)
     this.sun.castShadow = true
     this.sun.shadow.mapSize.set(2048, 2048)
-    // Узкий фрустум вокруг игрока: тени резче, чем при попытке накрыть весь мир.
+    // A tight frustum around the player: sharper shadows than covering the whole world.
     const extent = 42
     this.sun.shadow.camera.left = -extent
     this.sun.shadow.camera.right = extent
@@ -113,7 +113,7 @@ export class SceneRig {
     this.sun.shadow.camera.bottom = -extent
     this.sun.shadow.camera.near = 0.5
     this.sun.shadow.camera.far = 220
-    // Без этого сдвига воксели покрываются полосатыми артефактами самозатенения.
+    // Without this bias voxels get striped self-shadowing artifacts.
     this.sun.shadow.bias = -0.0006
     this.sun.shadow.normalBias = 0.03
     this.sun.shadow.radius = 3
@@ -139,12 +139,12 @@ export class SceneRig {
     this.sky.frustumCulled = false
     this.scene.add(this.sky)
 
-    // Постобработка. Порог намеренно выше единицы: светиться должны только снаряды и
-    // глаза босса с их emissive, а не вся освещённая солнцем трава.
+    // Post-processing. The threshold is deliberately above 1: only projectiles and
+    // the boss's emissive eyes should glow, not every sunlit patch of grass.
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    // Порог высокий, сила маленькая. Сцена и так ярко освещена, и при пороге около
-    // единицы блум подхватывал белые глаза и зубы босса, превращая его в белое пятно.
+    // High threshold, low strength. The scene is already brightly lit, and around a
+    // threshold of 1 bloom grabbed the boss's white eyes and teeth, blowing him out.
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
       0.28,
@@ -152,8 +152,8 @@ export class SceneRig {
       2.4,
     )
     this.composer.addPass(this.bloom)
-    // OutputPass сам делает тонмаппинг и перевод в sRGB на выходе композера — материалы
-    // при рендере в промежуточный таргет этого не делают.
+    // OutputPass performs tonemapping and the sRGB conversion at composer output —
+    // materials don't do that when rendering into an intermediate target.
     this.composer.addPass(new OutputPass())
     this.composer.setSize(window.innerWidth, window.innerHeight)
 
@@ -168,8 +168,8 @@ export class SceneRig {
   }
 
   /**
-   * Перекрашивает небо, туман и свет под текущее время суток.
-   * @param dayFraction доля суток в диапазоне [0, 1).
+   * Recolors the sky, fog and lights for the current time of day.
+   * @param dayFraction fraction of the day in [0, 1).
    */
   setTimeOfDay(dayFraction: number): void {
     const n = nightness(dayFraction)
@@ -189,8 +189,8 @@ export class SceneRig {
       day.ambientIntensity + (night.ambientIntensity - day.ambientIntensity) * n
     this.hemi.intensity = day.hemiIntensity + (night.hemiIntensity - day.hemiIntensity) * n
 
-    // Солнце ходит по небу, чтобы тени двигались. Ниже горизонта не опускаем —
-    // иначе ночью пропадают тени и картинка становится плоской.
+    // The sun travels the sky so shadows move. It never dips below the horizon —
+    // otherwise shadows vanish at night and the image goes flat.
     const angle = dayFraction * Math.PI * 2 - Math.PI / 2
     this.sunDirection.set(Math.cos(angle) * 0.7, Math.max(0.35, Math.sin(angle)), 0.42)
   }
@@ -203,7 +203,7 @@ export class SceneRig {
     return this.tmpA.lerp(this.tmpB, t)
   }
 
-  /** Привязывает фрустум тени и купол неба к игроку. */
+  /** Anchors the shadow frustum and the sky dome to the player. */
   follow(position: THREE.Vector3): void {
     this.sunTarget.position.copy(position)
     this.sun.position.copy(position).addScaledVector(this.sunDirection, 90)

@@ -2,23 +2,23 @@ import { Block } from './blocks'
 import type { VoxelReader } from './mesher'
 
 /**
- * DDA-рейкаст по воксельной сетке (алгоритм Amanatides–Woo), адаптированный из
- * официального мануала Three.js. Шагает строго по границам блоков, поэтому всегда
- * находит именно первый блок на луче — обычный THREE.Raycaster по мешу чанка так не умеет.
+ * DDA raycast over the voxel grid (Amanatides–Woo), adapted from the official Three.js
+ * manual. It steps exactly along block boundaries, so it always finds the true first
+ * block on the ray — something THREE.Raycaster over a chunk mesh cannot guarantee.
  *
- * Работает на простых числах, а не на THREE.Vector3, чтобы тесты не тянули за собой three.
+ * Operates on plain numbers rather than THREE.Vector3 so tests don't pull in three.
  */
 
 export interface VoxelHit {
-  /** Целочисленные координаты блока, в который попали. */
+  /** Integer coordinates of the hit block. */
   x: number
   y: number
   z: number
-  /** Нормаль задетой грани. Нули означают, что луч начался внутри блока. */
+  /** Normal of the struck face. All zeros mean the ray started inside the block. */
   nx: number
   ny: number
   nz: number
-  /** Точка попадания в мировых координатах. */
+  /** Hit point in world coordinates. */
   px: number
   py: number
   pz: number
@@ -29,8 +29,8 @@ export interface VoxelHit {
 const defaultTarget = (id: Block): boolean => id !== Block.Air
 
 /**
- * @param direction должен быть нормализован, иначе distance посчитается в неверных единицах.
- * @param isTarget какие блоки считать препятствием (по умолчанию — всё, кроме воздуха).
+ * @param direction must be normalized, or distance comes out in wrong units.
+ * @param isTarget which blocks count as obstacles (default: everything but air).
  */
 export function raycastVoxels(
   reader: VoxelReader,
@@ -55,7 +55,7 @@ export function raycastVoxels(
   const tDeltaY = dy !== 0 ? Math.abs(1 / dy) : Infinity
   const tDeltaZ = dz !== 0 ? Math.abs(1 / dz) : Infinity
 
-  // Расстояние до первой границы блока по каждой оси.
+  // Distance to the first block boundary along each axis.
   let tMaxX = dx !== 0 ? ((dx > 0 ? ix + 1 : ix) - ox) / dx : Infinity
   let tMaxY = dy !== 0 ? ((dy > 0 ? iy + 1 : iy) - oy) / dy : Infinity
   let tMaxZ = dz !== 0 ? ((dz > 0 ? iz + 1 : iz) - oz) / dz : Infinity

@@ -1,8 +1,8 @@
 import { BLOCK_COLORS } from '../config/palette'
 
 /**
- * Реестр блоков. Id — это значение в Uint8Array чанка, поэтому существующие id менять
- * нельзя (сломаются сохранения); новые добавляются строго в конец.
+ * Block registry. An id is the value stored in the chunk's Uint8Array, so existing ids
+ * must never change (saves would break); new ones are appended strictly at the end.
  */
 export const enum Block {
   Air = 0,
@@ -10,7 +10,7 @@ export const enum Block {
   Dirt = 2,
   Sand = 3,
   Stone = 4,
-  /** Полный уровень воды: море, озёра и вода из ведра. */
+  /** Full water level: sea, lakes and bucket water. */
   Water = 5,
   Wood = 6,
   Leaves = 7,
@@ -21,23 +21,23 @@ export const enum Block {
   Yellow = 12,
   Lavender = 13,
   Mint = 14,
-  /** Старая одноклеточная кроватка. Оставлена ради старых сохранений. */
+  /** Legacy single-cell bed. Kept for old saves. */
   Bed = 15,
-  /** Затухающие уровни растёкшейся воды. */
+  /** Decaying levels of spread water. */
   Water3 = 16,
   Water2 = 17,
   Water1 = 18,
-  /** Дверь занимает две клетки по вертикали одним id. */
+  /** A door occupies two vertical cells with a single id. */
   DoorClosed = 19,
   DoorOpen = 20,
-  /** Кроватка из двух блоков: изголовье и одеяло. */
+  /** Two-block bed: headboard and blanket. */
   BedHead = 21,
   BedFoot = 22,
-  /** Морковка-предмет: приманка для животных, в мир не ставится. */
+  /** Carrot item: animal bait; cannot be placed in the world. */
   Carrot = 23,
-  /** Морковная грядка в мире — из неё добывается морковка. */
+  /** Carrot patch in the world — the source of carrots. */
   CarrotPlant = 24,
-  /** Облачко — заряд для метательного. Существует только в инвентаре. */
+  /** Cloud — ammo for the throwable. Exists only in the inventory. */
   Cloud = 25,
   Lantern = 26,
 }
@@ -45,13 +45,13 @@ export const enum Block {
 export interface BlockDef {
   readonly id: Block
   readonly name: string
-  /** Останавливает существ (физика). */
+  /** Stops creatures (physics). */
   readonly solid: boolean
-  /** Полностью перекрывает соседние грани при мешинге. */
+  /** Fully occludes neighboring faces during meshing. */
   readonly opaque: boolean
   /**
-   * Считается ли стеной при проверке герметичности комнаты. По умолчанию равно solid;
-   * двери — главное исключение: открытая дверь проходима, но комнату запечатывает.
+   * Whether it counts as a wall for the room-seal check. Defaults to solid;
+   * doors are the key exception: an open door is passable yet still seals the room.
    */
   readonly seals?: boolean
   readonly color: number
@@ -59,15 +59,15 @@ export interface BlockDef {
   readonly bottomColor?: number
   readonly transparent?: boolean
   readonly opacity?: number
-  /** Высота блока в клетке для мешера (вода считает свою по уровню). */
+  /** Block height within its cell for the mesher (water derives its own from level). */
   readonly height?: number
-  /** Множитель яркости: >1 пробивает порог блума, и блок светится. */
+  /** Brightness multiplier: >1 crosses the bloom threshold and the block glows. */
   readonly glow?: number
   readonly placeable: boolean
-  /** Что падает в инвентарь при поломке вместо самого блока. */
+  /** What drops into the inventory on break instead of the block itself. */
   readonly drops?: { readonly block: Block; readonly count: number }
   readonly variation?: number
-  /** Для панели ресурсов: что это и как добыть. */
+  /** For the resources panel: what it is and how to get it. */
   readonly description?: string
   readonly source?: string
 }
@@ -103,7 +103,7 @@ const DEFS: readonly BlockDef[] = [
   {
     id: Block.Water,
     name: 'вода',
-    // Вода не solid: сквозь неё плывут, и стена из воды дом не держит.
+    // Water is not solid: you swim through it, and a water wall cannot seal a house.
     solid: false,
     opaque: false,
     color: BLOCK_COLORS.water,
@@ -131,7 +131,7 @@ const DEFS: readonly BlockDef[] = [
   {
     id: Block.Glass,
     name: 'стекло',
-    // Стекло solid и запечатывает: окна не ломают герметичность дома.
+    // Glass is solid and seals: windows do not break a house's air-tightness.
     solid: true,
     opaque: false,
     color: BLOCK_COLORS.glass,
@@ -155,7 +155,7 @@ const DEFS: readonly BlockDef[] = [
     topColor: BLOCK_COLORS.bedCap,
     height: 0.5,
     variation: 0.02,
-    // Из инвентаря больше не ставится, но в старых мирах живёт и работает.
+    // No longer placeable from the inventory, but lives on and works in old worlds.
     placeable: false,
     drops: { block: Block.BedHead, count: 1 },
   },
@@ -176,7 +176,7 @@ const DEFS: readonly BlockDef[] = [
   {
     id: Block.DoorOpen,
     name: 'дверца (открыта)',
-    // Открытая дверь проходима, но комнату по-прежнему запечатывает — в этом весь смысл.
+    // An open door is passable yet still seals the room — that is the whole point.
     solid: false,
     opaque: false,
     seals: true,
@@ -224,8 +224,8 @@ const DEFS: readonly BlockDef[] = [
     name: 'морковная грядка',
     solid: false,
     opaque: false,
-    // Бока оранжевые нарочно: зелёная грядка на зелёной траве неразличима,
-    // а искать её — часть квеста.
+    // Orange sides on purpose: a green patch on green grass is invisible,
+    // and finding it is part of the quest.
     color: BLOCK_COLORS.carrot,
     topColor: BLOCK_COLORS.carrotLeaf,
     height: 0.4,
@@ -258,7 +258,7 @@ const DEFS: readonly BlockDef[] = [
   },
 ]
 
-/** Быстрые таблицы вместо поиска по массиву — мешер зовёт их миллионы раз. */
+/** Fast lookup tables instead of array search — the mesher calls these millions of times. */
 const SOLID = new Uint8Array(256)
 const OPAQUE = new Uint8Array(256)
 const SEALS = new Uint8Array(256)
@@ -293,7 +293,7 @@ export function isOpaque(id: Block): boolean {
   return OPAQUE[id] === 1
 }
 
-/** Стена с точки зрения герметичности комнаты. НЕ то же самое, что solid: см. двери. */
+/** A wall in the room-seal sense. NOT the same as solid: see doors. */
 export function sealsRoom(id: Block): boolean {
   return SEALS[id] === 1
 }
@@ -302,7 +302,7 @@ export function isWater(id: Block): boolean {
   return WATER_LEVEL[id] > 0
 }
 
-/** Уровень воды 4…1; 0 — не вода. */
+/** Water level 4…1; 0 means not water. */
 export function waterLevel(id: Block): number {
   return WATER_LEVEL[id]
 }
@@ -320,11 +320,11 @@ export function isBed(id: Block): boolean {
 }
 
 /**
- * Блоки хотбара по порядку слотов. Цифры выбирают первые девять, колесо крутит все.
- * Морковка и облачко не ставятся — это предметы «в руке».
+ * Hotbar blocks in slot order. Digits select the first nine, the wheel cycles all.
+ * Carrot and cloud are not placeable — they are held-in-hand items.
  */
 export const HOTBAR_BLOCKS: readonly Block[] = [
-  // Первые девять — под цифрами: всё нужное для квестов должно быть в один тап.
+  // First nine sit on digits: everything quest-critical must be one tap away.
   Block.BedHead,
   Block.DoorClosed,
   Block.Water,
@@ -334,7 +334,7 @@ export const HOTBAR_BLOCKS: readonly Block[] = [
   Block.Yellow,
   Block.Glass,
   Block.Wood,
-  // Дальше — только колесом.
+  // The rest is wheel-only.
   Block.Stone,
   Block.Lavender,
   Block.Mint,

@@ -13,14 +13,11 @@ interface House {
   smurf: Smurf
 }
 
-/** Дальше этого расстояния от кроватки изменение блока на её комнату не влияет. */
-const INFLUENCE_RADIUS = 14
-
 function bedKey(x: number, y: number, z: number): string {
   return `${x},${y},${z}`
 }
 
-/** Цепочка испытаний до прихода Витруляна. Каждое учит механике, нужной дальше. */
+/** Quest chain before Vitruylan arrives. Each step teaches a mechanic used later. */
 export const QUEST_CHAIN = [
   { id: 'village', title: 'Построй домики для смурфиков', total: VILLAGE.housesRequired },
   { id: 'animals', title: 'Приведи зверюшек морковкой', total: VILLAGE.animalsRequired },
@@ -31,7 +28,7 @@ export const QUEST_CHAIN = [
 
 export type QuestId = (typeof QUEST_CHAIN)[number]['id']
 
-/** Реплики старейшины на выдаче заданий. */
+/** Elder lines spoken when a quest is assigned. */
 const ELDER_LINES: Record<QuestId, string> = {
   village: 'Старейшина: «Нам нужно пять домиков — с кроватками и без сквозняков!»',
   animals:
@@ -42,22 +39,22 @@ const ELDER_LINES: Record<QuestId, string> = {
 }
 
 /**
- * Деревня и цепочка испытаний.
+ * Village and quest chain.
  *
- * Дома держатся на одном правиле: кроватка в герметичной комнате, и оно перепроверяется
- * после каждого изменения блока рядом — симметрично в обе стороны. Сломал стену — дом
- * перестал считаться и житель ушёл; заделал — дом снова дом, приедет новый.
+ * Houses follow one rule: a bed inside a sealed room, rechecked after every nearby
+ * block change — symmetrically both ways. Break a wall and the house stops counting
+ * and the resident leaves; seal it again and a new resident arrives.
  *
- * Прогресс цепочки — тоже по возможности выводится из мира: дома из кроваток, пруд —
- * сканом воды у деревни. Только «пережитая ночь», приведённые животные и собранные
- * облачка приходят снаружи (их из вокселей не выведешь).
+ * Quest progress is derived from the world when possible: houses from beds, the pond
+ * from a water scan near the village. Only “survived the night”, delivered animals,
+ * and gathered clouds come from outside (you cannot derive those from voxels).
  */
 export class Village {
   private readonly knownBeds = new Map<string, THREE.Vector3>()
   private readonly houses = new Map<string, House>()
   private readonly departing = new Set<Smurf>()
 
-  /** Индекс текущего испытания в QUEST_CHAIN; равен длине цепочки, когда всё пройдено. */
+  /** Index of the current quest in QUEST_CHAIN; equals the chain length when done. */
   stage = 0
   animalsDelivered = 0
   cloudsGathered = 0
@@ -66,11 +63,10 @@ export class Village {
   private pondCenter: THREE.Vector3 | null = null
   private pondScanTimer = 0
 
-  /** Позиции ночных врагов — подставляет менеджер ночи. */
+  /** Night-enemy positions — filled in by the night manager. */
   threats: readonly THREE.Vector3[] = []
   night = false
 
-  private readonly scratch = new THREE.Vector3()
   private announcedCompletion = false
   private elderAssigned = false
 
@@ -79,7 +75,7 @@ export class Village {
   onHint: ((id: string, text: string) => void) | null = null
   onCompleted: (() => void) | null = null
   onSettled: (() => void) | null = null
-  /** Идемпотентное управление дверью — подставляет main через Interaction. */
+  /** Idempotent door control — wired from main via Interaction. */
   setDoor: (x: number, y: number, z: number, open: boolean) => void = () => {}
 
   constructor(
@@ -105,7 +101,7 @@ export class Village {
     return [...this.knownBeds.values()].map((bed) => [bed.x, bed.y, bed.z])
   }
 
-  /** Центр деревни — среднее по домам. Пока домов нет, деревни нет. */
+  /** Village center — average of house centers. No houses means no village. */
   center(): THREE.Vector3 | null {
     if (this.houses.size === 0) return null
     const sum = new THREE.Vector3()
@@ -113,7 +109,7 @@ export class Village {
     return sum.divideScalar(this.houses.size)
   }
 
-  /** Точки интереса для прогулок смурфиков: крылечки, пруд, площадь. */
+  /** Points of interest for smurf walks: doorsteps, pond, square. */
   private pois(): THREE.Vector3[] {
     const points = [...this.houses.values()].map((house) => house.smurf.home)
     const villageCenter = this.center()
@@ -122,17 +118,17 @@ export class Village {
     return points
   }
 
-  // ------------------------------------------------------------------ дома
+  // ------------------------------------------------------------------ houses
 
   handleBlockPlaced(x: number, y: number, z: number, block: Block): void {
-    // Регистрируется только изголовье пары (или старая одноклеточная кроватка) — иначе
-    // одна кроватка давала бы два дома.
+    // Only the head of a bed pair (or the legacy single-cell bed) is registered —
+    // otherwise one bed would count as two houses.
     if (block === Block.BedHead || block === Block.Bed) {
       this.knownBeds.set(bedKey(x, y, z), new THREE.Vector3(x, y, z))
       const result = validateRoom(this.world.reader, x, y, z)
       if (!result.ok) this.explain(result.reason)
     }
-    this.reevaluateNear(x, y, z)
+    this.reevaluateAll()
   }
 
   handleBlockBroken(x: number, y: number, z: number, block: Block): void {
@@ -141,14 +137,13 @@ export class Village {
       this.knownBeds.delete(key)
       this.deregister(key)
     }
-    this.reevaluateNear(x, y, z)
+    this.reevaluateAll()
   }
 
-  private reevaluateNear(x: number, y: number, z: number): void {
-    this.scratch.set(x, y, z)
+  private reevaluateAll(): void {
+    // At most a handful of beds can exist at once. Rechecking all of them is cheap
+    // and, unlike a fixed distance cutoff, remains correct for long narrow rooms.
     for (const [key, bed] of this.knownBeds) {
-      if (bed.distanceTo(this.scratch) > INFLUENCE_RADIUS) continue
-
       const result = validateRoom(this.world.reader, bed.x, bed.y, bed.z)
       const registered = this.houses.has(key)
 
@@ -174,23 +169,23 @@ export class Village {
   ): void {
     const centerVec = new THREE.Vector3(center.x + 0.5, center.y, center.z + 0.5)
 
-    // Дверь дома: клетка двери, примыкающая к комнате. Через неё смурфик заходит на ночь.
+    // House door: a door cell adjacent to the room. Smurfs enter through it at night.
     const door = this.findDoor(cells)
     const doorstep = this.findDoorstep(door, centerVec)
 
-    // Житель приходит пешком от горизонта — так заселение читается как событие.
+    // Residents walk in from the horizon so settling reads as an event.
     const angle = Math.random() * Math.PI * 2
     const spawnX = centerVec.x + Math.cos(angle) * VILLAGE.arriveDistance
     const spawnZ = centerVec.z + Math.sin(angle) * VILLAGE.arriveDistance
     const spawn = new THREE.Vector3(spawnX, this.world.groundY(spawnX, spawnZ), spawnZ)
 
-    // Первый заселившийся — старейшина: он выдаёт задания и носит красный колпачок.
+    // First settler is the elder: assigns quests and wears a red hat.
     const elder = !this.elderAssigned
     this.elderAssigned = true
 
     const smurf = new Smurf(spawn, doorstep, elder)
     smurf.door = door
-    // Клетка пола комнаты, куда прятаться: у кроватки, а не в геометрическом центре.
+    // Floor cell to hide on: next to the bed, not the geometric room center.
     smurf.inside = new THREE.Vector3(bed.x, bed.y, bed.z)
     smurf.onSay = (text) => this.onSay?.(text)
     smurf.onSettled = () => {
@@ -206,7 +201,7 @@ export class Village {
     this.reportProgress()
   }
 
-  /** Ищет дверь на границе комнаты: клетка двери, соседняя с внутренней клеткой. */
+  /** Finds a door on the room boundary: a door cell adjacent to an interior cell. */
   private findDoor(cells: readonly { x: number; y: number; z: number }[]): THREE.Vector3 | null {
     for (const cell of cells) {
       for (const [dx, dz] of [
@@ -218,7 +213,7 @@ export class Village {
         const x = cell.x + dx
         const z = cell.z + dz
         if (isDoor(this.world.getVoxel(x, cell.y, z))) {
-          // Нижняя клетка двери.
+          // Lower door cell.
           const y = isDoor(this.world.getVoxel(x, cell.y - 1, z)) ? cell.y - 1 : cell.y
           return new THREE.Vector3(x, y, z)
         }
@@ -227,10 +222,10 @@ export class Village {
     return null
   }
 
-  /** Крылечко: клетка снаружи от двери, а без двери — случайная сторона дома. */
+  /** Doorstep: cell outside the door, or a random side of the house if there is none. */
   private findDoorstep(door: THREE.Vector3 | null, center: THREE.Vector3): THREE.Vector3 {
     if (door !== null) {
-      // Наружу — в сторону от центра комнаты.
+      // Outward — away from the room center.
       const dx = Math.sign(door.x + 0.5 - center.x)
       const dz = Math.sign(door.z + 0.5 - center.z)
       const x = door.x + (Math.abs(dx) >= Math.abs(dz) ? dx : 0) + 0.5
@@ -258,9 +253,9 @@ export class Village {
     smurf.dispose()
   }
 
-  // ------------------------------------------------------------------ цепочка
+  // ------------------------------------------------------------------ quest chain
 
-  /** Прогресс текущего испытания. */
+  /** Progress of the current quest. */
   private questProgress(): { title: string; done: number; total: number } {
     if (this.completed) {
       return { title: 'Все испытания пройдены!', done: 1, total: 1 }
@@ -293,24 +288,24 @@ export class Village {
           this.onCompleted?.()
         }
       } else {
-        // Следующее задание объявляет старейшина.
+        // The elder announces the next quest.
         this.onSay?.(ELDER_LINES[QUEST_CHAIN[this.stage].id])
         const next = this.questProgress()
         this.onProgress?.(next.title, next.done, next.total)
-        // Прогресс мог быть уже выполнен заранее (пруд выкопан до задания) — досчитываем.
+        // Progress may already be done (pond dug before the quest) — catch up.
         this.reportProgress()
       }
     }
   }
 
-  /** Животное дошло до деревни. */
+  /** An animal reached the village. */
   markAnimalDelivered(): void {
     this.animalsDelivered++
     this.onSay?.('В деревне новая зверюшка!')
     this.reportProgress()
   }
 
-  /** Рассвет после целой ночи. Считается только когда испытание активно. */
+  /** Dawn after a full night. Counts only while the night quest is active. */
   markNightSurvived(): void {
     if (!this.completed && QUEST_CHAIN[this.stage].id === 'night') {
       this.nightSurvived = true
@@ -323,8 +318,8 @@ export class Village {
     if (!this.completed && QUEST_CHAIN[this.stage].id === 'clouds') this.reportProgress()
   }
 
-  /** Пруд ищем сканом: клетки воды выше уровня моря рядом с деревней. Terrain-озёра
-   * все на уровне моря и ниже, поэтому насчитать чужую воду нельзя. */
+  /** Pond scan: water cells above sea level near the village. Terrain lakes sit at
+   * sea level or below, so foreign water cannot inflate the count. */
   private scanPond(): void {
     const center = this.center()
     if (center === null) return
@@ -354,7 +349,7 @@ export class Village {
     }
   }
 
-  /** Восстановление после загрузки: числовой прогресс из сейва, дома — из мира. */
+  /** Restore after load: numeric progress from the save, houses from the world. */
   restoreProgress(saved: {
     stage: number
     animals: number
@@ -368,10 +363,10 @@ export class Village {
     if (this.completed) this.announcedCompletion = true
   }
 
-  // ------------------------------------------------------------------ кадр
+  // ------------------------------------------------------------------ frame
 
   update(dt: number, elapsed: number): void {
-    // Пруд сканируется редко: полный проход по кубу — не для каждого кадра.
+    // Pond is scanned infrequently: a full cube walk is not for every frame.
     this.pondScanTimer -= dt
     if (this.pondScanTimer <= 0) {
       this.pondScanTimer = 2
@@ -389,7 +384,7 @@ export class Village {
     }
 
     for (const house of this.houses.values()) {
-      // Угроза для каждого смурфика своя — ближайшая к нему, а не к игроку.
+      // Each smurf’s threat is the nearest to them, not to the player.
       ctx.threat = this.nearestThreatTo(house.smurf.position)
       house.smurf.update(dt, this.world, elapsed, ctx)
     }

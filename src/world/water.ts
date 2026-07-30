@@ -2,30 +2,29 @@ import { WORLD } from '../config/tuning'
 import { Block, isWater, waterByLevel, waterLevel } from './blocks'
 
 /**
- * Симуляция воды.
+ * Water simulation.
  *
- * Вода двух сортов: ИСТОЧНИК (полный уровень, только из террагена и ведра) и
- * РАСТЁКШАЯСЯ (уровни 3…1), которую источник порождает вокруг себя.
+ * Water comes in two kinds: SOURCE (full level, only from terrain and the bucket) and
+ * SPREAD water (levels 3…1) that a source produces around itself.
  *
- * Три правила, дающие управляемую воду:
+ * Three rules make water controllable:
  *
- * 1. Вниз вода ПЕРЕМЕЩАЕТСЯ, а не копируется: разбил блок под водой — она утекла
- *    туда, наверху пусто. Никакого бесплатного удвоения.
- * 2. По горизонтали источник растекается с потерей уровня (4 → 3 → 2 → 1), поэтому
- *    пруд ограничивает себя сам.
- * 3. Растёкшаяся вода живёт только пока её кто-то подпитывает — сосед уровнем выше
- *    или вода сверху. Вычерпал источник — всё растёкшееся высыхает само. Затопленный
- *    дом лечится ведром, а не сносом.
+ * 1. Downward, water MOVES rather than copies: break the block under water and it
+ *    drains there, leaving the top empty. No free duplication.
+ * 2. Horizontally a source spreads with level decay (4 → 3 → 2 → 1), so a pond
+ *    limits itself.
+ * 3. Spread water lives only while something feeds it — a higher-level neighbor or
+ *    water above. Scoop the source and all spread water dries up on its own.
+ *    A flooded house is fixed with a bucket, not demolition.
  *
- * Работает очередью активных клеток с бюджетом на тик. Все изменения идут с
- * recordEdit=false — вода не пишется в сохранение, после загрузки она стечёт заново
- * из источников.
+ * Runs as a queue of active cells with a per-tick budget. All writes use
+ * recordEdit=false — water is never saved; after loading it re-flows from sources.
  */
 
-/** Всё, что нужно симуляции от мира. Узкий интерфейс — тесты подсовывают Map. */
+/** Everything the simulation needs from the world. Narrow so tests can pass a Map. */
 export interface WaterWorld {
   getVoxel(x: number, y: number, z: number): Block
-  /** Ставит блок без записи в дифф игрока. */
+  /** Places a block without recording it into the player's edit diff. */
   setFluid(x: number, y: number, z: number, id: Block): void
 }
 
@@ -42,8 +41,8 @@ export class WaterSim {
   private accumulator = 0
 
   /**
-   * Будит клетку и её водных соседей. Зовётся при любом изменении блока: копнул рядом
-   * с озером — соседняя вода просыпается и затекает в яму.
+   * Wakes a cell and its water neighbors. Called on any block change: dig next to
+   * a lake and the adjacent water wakes up and flows into the hole.
    */
   wake(world: WaterWorld, x: number, y: number, z: number): void {
     this.wakeIfWater(world, x, y, z)
@@ -66,14 +65,14 @@ export class WaterSim {
     this.queue.push(x, y, z)
   }
 
-  /** Сколько клеток ждёт обработки — удобно для тестов и отладки. */
+  /** How many cells are pending — handy for tests and debugging. */
   get pending(): number {
     return this.queue.length / 3
   }
 
   update(dt: number, world: WaterWorld): void {
     this.accumulator += dt
-    // Не даём накопителю разгоняться после лага: максимум два тика за кадр.
+    // Don't let the accumulator run away after a lag spike: at most two ticks per frame.
     this.accumulator = Math.min(this.accumulator, WORLD.waterTick * 2)
     while (this.accumulator >= WORLD.waterTick) {
       this.accumulator -= WORLD.waterTick
@@ -81,7 +80,7 @@ export class WaterSim {
     }
   }
 
-  /** Один тик с бюджетом. Отдельным методом — тесты гоняют его напрямую. */
+  /** One budgeted tick. A separate method so tests can drive it directly. */
   tick(world: WaterWorld, budget: number = WORLD.waterBudget): void {
     let processed = 0
     while (processed < budget && this.queue.length >= 3) {
@@ -99,7 +98,7 @@ export class WaterSim {
     if (!isWater(id)) return
     const level = waterLevel(id)
 
-    // 1. Вниз — перемещением, а не копией: объём сохраняется, вода «утекает».
+    // 1. Downward by moving, not copying: volume is conserved, water drains.
     if (y > 0) {
       const below = world.getVoxel(x, y - 1, z)
       if (below === Block.Air || (isWater(below) && waterLevel(below) < level)) {
@@ -111,7 +110,7 @@ export class WaterSim {
       }
     }
 
-    // 2. Высыхание: растёкшаяся вода без подпитки исчезает. Источник не сохнет никогда.
+    // 2. Drying: unfed spread water disappears. A source never dries.
     if (level < 4) {
       const support = this.supportFor(world, x, y, z)
       if (level > support) {
@@ -122,7 +121,7 @@ export class WaterSim {
       }
     }
 
-    // 3. По горизонтали — с потерей уровня, пока есть что терять.
+    // 3. Horizontally with level decay, while there is level left to lose.
     if (level <= 1) return
     const spreadId = waterByLevel(level - 1)
     for (const [dx, dz] of DIRS) {
@@ -136,7 +135,7 @@ export class WaterSim {
     }
   }
 
-  /** Чем клетку подпитывают соседи: вода сверху или сосед уровнем выше сбоку. */
+  /** What feeds a cell: water above or a higher-level neighbor to the side. */
   private supportFor(world: WaterWorld, x: number, y: number, z: number): number {
     let support = isWater(world.getVoxel(x, y + 1, z)) ? 3 : 0
     for (const [dx, dz] of DIRS) {
@@ -145,7 +144,7 @@ export class WaterSim {
     return support
   }
 
-  /** Будит водных соседей клетки — после перемещения или высыхания они пересчитываются. */
+  /** Wakes a cell's water neighbors — they recompute after a move or dry-out. */
   private wakeWaterAround(world: WaterWorld, x: number, y: number, z: number): void {
     this.wakeIfWater(world, x + 1, y, z)
     this.wakeIfWater(world, x - 1, y, z)

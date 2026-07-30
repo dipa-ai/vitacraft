@@ -1,18 +1,18 @@
 import * as THREE from 'three'
-import { NIGHT } from '../config/tuning'
+import { NIGHT, PLAYER } from '../config/tuning'
 import type { World } from '../world/world'
 import { createLurkerModel } from '../render/models'
 import { Entity } from './entity'
 
 /**
- * Ночная зверюшка. Идёт к ближайшей цели по прямой, скользя вдоль стен через stepMove.
- * Полноценного поиска пути нет намеренно: враг, скребущийся в стену закрытого дома, —
- * ровно та картинка, ради которой ночь и делалась. Блоки не ломает, через закрытую
- * дверь не проходит — «в доме безопасно» обеспечивается физикой, а не проверками.
+ * A night critter. Walks straight at the nearest target, sliding along walls via
+ * stepMove. No real pathfinding on purpose: an enemy scratching at the wall of a
+ * sealed house is exactly the image the night was built for. It breaks no blocks
+ * and cannot pass a closed door — "safe indoors" is enforced by physics, not checks.
  */
 export class Lurker extends Entity {
   private touchCooldown = 0
-  /** Рассвет: зверюшка тает и её пора убирать. */
+  /** Dawn: the critter melts away and should be removed. */
   dissolving = false
   private dissolveProgress = 0
 
@@ -22,8 +22,8 @@ export class Lurker extends Entity {
   }
 
   /**
-   * @param target ближайшая цель (игрок или смурфик).
-   * @returns true, если в этом кадре зверюшка коснулась цели-игрока и должен пройти урон.
+   * @param target the nearest target (player or smurf).
+   * @returns true if the critter touched a player target this frame and damage applies.
    */
   update(
     dt: number,
@@ -58,8 +58,15 @@ export class Lurker extends Entity {
     this.stepMove(world, dt)
     this.syncModel(elapsed, dt)
 
-    // Кусается только игрок: смурфиков зверюшки пугают, но не трогают.
-    if (targetIsPlayer && distance < this.radius + 0.75 && this.touchCooldown <= 0) {
+    // Only the player gets bitten: critters scare smurfs but never touch them.
+    const overlapsPlayerVertically =
+      this.position.y < target.y + PLAYER.height && this.position.y + this.height > target.y
+    if (
+      targetIsPlayer &&
+      overlapsPlayerVertically &&
+      distance < this.radius + 0.75 &&
+      this.touchCooldown <= 0
+    ) {
       this.touchCooldown = NIGHT.lurkerTouchCooldown
       return true
     }

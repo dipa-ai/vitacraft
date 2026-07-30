@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Block, isWater, waterLevel } from './blocks'
 import { WaterSim, type WaterWorld } from './water'
 
-/** Мир на Map: пол на y=0 и перечисленные блоки. */
+/** Map-backed world: a floor at y=0 plus the listed blocks. */
 function makeWorld(cells: Record<string, Block> = {}, floorY = 0) {
   const map = new Map<string, Block>(Object.entries(cells))
   const world: WaterWorld = {
@@ -17,7 +17,7 @@ function makeWorld(cells: Record<string, Block> = {}, floorY = 0) {
   return { world, map }
 }
 
-/** Гоняет тики до успокоения очереди. */
+/** Runs ticks until the queue settles. */
 function settle(sim: WaterSim, world: WaterWorld, maxTicks = 200): number {
   let ticks = 0
   while (sim.pending > 0 && ticks < maxTicks) {
@@ -34,35 +34,35 @@ function countWater(map: Map<string, Block>): number {
 }
 
 describe('WaterSim', () => {
-  it('вода затекает в соседнюю яму', () => {
-    // Источник на y=1, рядом яма глубиной 1 (пол только на y=-1 под ямой… проще:
-    // источник стоит на полу, соседняя клетка на том же уровне пуста).
+  it('water flows into an adjacent pit', () => {
+    // A source at y=1 next to a one-deep pit (simpler put: the source stands on
+    // the floor and the neighboring same-level cell is empty).
     const { world, map } = makeWorld({ '0,1,0': Block.Water })
     const sim = new WaterSim()
     sim.wake(world, 0, 1, 0)
     settle(sim, world)
 
-    // Соседние клетки на уровне источника получили воду уровнем ниже.
+    // Cells at source level received water one level lower.
     expect(isWater(world.getVoxel(1, 1, 0))).toBe(true)
     expect(waterLevel(world.getVoxel(1, 1, 0))).toBe(3)
     expect(countWater(map)).toBeGreaterThan(1)
   })
 
-  it('не растекается бесконечно: уровень затухает за 3 шага', () => {
+  it('does not spread forever: the level decays over 3 steps', () => {
     const { world } = makeWorld({ '0,1,0': Block.Water })
     const sim = new WaterSim()
     sim.wake(world, 0, 1, 0)
     settle(sim, world)
 
-    // 4 → 3 → 2 → 1: на четвёртом шаге воды уже нет.
+    // 4 → 3 → 2 → 1: by the fourth step there is no water left.
     expect(waterLevel(world.getVoxel(1, 1, 0))).toBe(3)
     expect(waterLevel(world.getVoxel(2, 1, 0))).toBe(2)
     expect(waterLevel(world.getVoxel(3, 1, 0))).toBe(1)
     expect(world.getVoxel(4, 1, 0)).toBe(Block.Air)
   })
 
-  it('вниз вода перемещается, а не копируется: объём сохраняется', () => {
-    // Колодец 1×1 со стенами: источник наверху, пустота до пола y=0.
+  it('downward water moves rather than copies: volume is conserved', () => {
+    // A 1×1 walled shaft: source on top, empty down to the floor at y=0.
     const cells: Record<string, Block> = { '0,5,0': Block.Water }
     for (let y = 1; y <= 5; y++) {
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
@@ -74,21 +74,21 @@ describe('WaterSim', () => {
     sim.wake(world, 0, 5, 0)
     settle(sim, world)
 
-    // Источник утёк на дно, наверху пусто, воды осталось ровно одна клетка.
+    // The source drained to the bottom; the top is empty; exactly one cell remains.
     expect(waterLevel(world.getVoxel(0, 1, 0))).toBe(4)
     expect(world.getVoxel(0, 5, 0)).toBe(Block.Air)
     expect(countWater(map)).toBe(1)
   })
 
-  it('разбитый блок под источником: вода утекает вниз и не остаётся сверху', () => {
-    // Источник стоит на блоке, под блоком пустота до пола.
+  it('breaking the block under a source: water drains down, none stays above', () => {
+    // The source stands on a block with a void below it down to the floor.
     const { world } = makeWorld({ '0,3,0': Block.Water, '0,2,0': Block.Stone })
     const sim = new WaterSim()
     sim.wake(world, 0, 3, 0)
     settle(sim, world)
     expect(waterLevel(world.getVoxel(0, 3, 0))).toBe(4)
 
-    // Ломаем опору — источник должен провалиться на пол, а не размножиться.
+    // Break the support — the source must fall to the floor, not multiply.
     world.setFluid(0, 2, 0, Block.Air)
     sim.wake(world, 0, 2, 0)
     settle(sim, world)
@@ -98,24 +98,24 @@ describe('WaterSim', () => {
     expect(world.getVoxel(0, 2, 0)).toBe(Block.Air)
   })
 
-  it('вычерпанный источник осушает всю растёкшуюся воду', () => {
+  it('scooping the source dries out all spread water', () => {
     const { world, map } = makeWorld({ '0,1,0': Block.Water })
     const sim = new WaterSim()
     sim.wake(world, 0, 1, 0)
     settle(sim, world)
     expect(countWater(map)).toBeGreaterThan(1)
 
-    // Черпаем источник ведром.
+    // Scoop the source with the bucket.
     world.setFluid(0, 1, 0, Block.Air)
     sim.wake(world, 0, 1, 0)
     settle(sim, world)
 
-    // Без подпитки растёкшаяся вода высохла вся.
+    // Without feed, all spread water has dried.
     expect(countWater(map)).toBe(0)
   })
 
-  it('в замкнутом бассейне вода остаётся и не исчезает', () => {
-    // Бассейн 1×3 со стенами.
+  it('water in a sealed basin stays and does not vanish', () => {
+    // A 1×3 walled basin.
     const cells: Record<string, Block> = {}
     for (let x = -1; x <= 3; x++) {
       cells[`${x},1,-1`] = Block.Stone
@@ -131,44 +131,44 @@ describe('WaterSim', () => {
 
     expect(isWater(world.getVoxel(1, 1, 0))).toBe(true)
     expect(isWater(world.getVoxel(2, 1, 0))).toBe(true)
-    // За стены не вышло.
+    // Nothing escaped past the walls.
     expect(world.getVoxel(4, 1, 0)).toBe(Block.Air)
     expect(countWater(map)).toBe(3)
   })
 
-  it('пробуждается от изменения соседнего блока', () => {
-    // Вода за стенкой; стенку убрали — вода должна затечь.
+  it('wakes on a neighboring block change', () => {
+    // Water behind a wall; remove the wall — water must flow in.
     const { world } = makeWorld({ '0,1,0': Block.Water, '1,1,0': Block.Stone })
     const sim = new WaterSim()
     sim.wake(world, 0, 1, 0)
     settle(sim, world)
     expect(world.getVoxel(2, 1, 0)).toBe(Block.Air)
 
-    // Ломаем стенку — wake зовётся из setVoxel мира.
+    // Break the wall — wake is invoked from the world's setVoxel.
     world.setFluid(1, 1, 0, Block.Air)
     sim.wake(world, 1, 1, 0)
     settle(sim, world)
     expect(isWater(world.getVoxel(1, 1, 0))).toBe(true)
   })
 
-  it('пока внизу пусто, вбок не растекается', () => {
-    // Источник на краю обрыва: под соседней клеткой дыра до пола.
+  it('does not spread sideways while below is empty', () => {
+    // A source at a cliff edge: the neighbor cell has a hole down to the floor.
     const { world } = makeWorld({ '0,3,0': Block.Water, '0,2,0': Block.Stone, '0,1,0': Block.Stone })
     const sim = new WaterSim()
     sim.wake(world, 0, 3, 0)
     settle(sim, world)
 
-    // Соседняя клетка на y=3 получила воду (растеклась по опоре)…
+    // The neighbor at y=3 got water (spread over its support)…
     expect(isWater(world.getVoxel(1, 3, 0))).toBe(true)
-    // …и упала вниз столбом того же уровня, а не осталась висеть.
+    // …and it fell down as a same-level column instead of hanging.
     expect(waterLevel(world.getVoxel(1, 1, 0))).toBe(3)
   })
 
-  it('соблюдает бюджет на тик', () => {
+  it('respects the per-tick budget', () => {
     const { world } = makeWorld({ '0,1,0': Block.Water })
     const sim = new WaterSim()
     sim.wake(world, 0, 1, 0)
-    // Бюджет 1: за один тик обрабатывается ровно одна клетка.
+    // Budget 1: exactly one cell is processed per tick.
     sim.tick(world, 1)
     expect(sim.pending).toBeGreaterThan(0)
   })

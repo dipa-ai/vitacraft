@@ -5,7 +5,7 @@ import { raycastVoxels, type VoxelHit } from '../world/raycast'
 import type { World } from '../world/world'
 import { playerOverlapsBlock, type Player } from './player'
 
-/** Ближайшая сущность на луче — combat.ts подставляет сюда свою проверку. */
+/** Nearest entity on the ray — combat.ts plugs its own check in here. */
 export interface EntityRayHit {
   distance: number
   applyDamage: () => void
@@ -17,7 +17,7 @@ export type EntityRaycaster = (
   maxDistance: number,
 ) => EntityRayHit | null
 
-/** Стартовый запас: деревню должно быть из чего строить сразу, без гринда. */
+/** Starting stock: the village must be buildable right away, no grinding. */
 const STARTING_INVENTORY: ReadonlyArray<readonly [Block, number]> = [
   [Block.BedHead, 8],
   [Block.DoorClosed, 8],
@@ -34,28 +34,28 @@ const STARTING_INVENTORY: ReadonlyArray<readonly [Block, number]> = [
   [Block.Cloud, 0],
 ]
 
-/** Через воду смотрят и целятся насквозь — ломать её обычной киркой нельзя. */
+/** Water is looked and aimed through — the plain pickaxe cannot break it. */
 function isTargetable(id: Block): boolean {
   return id !== Block.Air && !isWater(id)
 }
 
 /**
- * Ломание и установка блоков плюс инвентарь.
+ * Block breaking, placement and the inventory.
  *
- * ЛКМ имеет два смысла и разбирается по дистанции: если сущность ближе найденного блока —
- * это удар, иначе — копание. С водой в руке ЛКМ вместо копания черпает воду.
+ * LMB has two meanings resolved by distance: an entity closer than the found block
+ * means a strike, otherwise it digs. With water in hand LMB scoops instead of digging.
  *
- * Парные блоки (кроватка из двух клеток, дверь в две клетки высотой) ставятся и ломаются
- * целиком: половина без пары невозможна по построению.
+ * Paired blocks (the two-cell bed, the two-cell-tall door) place and break as a
+ * whole: an unpaired half is impossible by construction.
  */
 export class Interaction {
   activeSlot = 0
   readonly inventory = new Map<Block, number>()
 
-  /** Зовётся после любого изменения блока — по нему quest.ts перепроверяет дома. */
+  /** Fires after any block change — quest.ts revalidates houses off of it. */
   onBlockChanged: ((x: number, y: number, z: number, previous: Block, next: Block) => void) | null =
     null
-  /** Подставляется боевой системой; до её появления удар просто ломает блоки. */
+  /** Injected by the combat system; before that a strike simply breaks blocks. */
   entityRaycaster: EntityRaycaster | null = null
   onMelee: (() => void) | null = null
   onPlaced: ((x: number, y: number, z: number, block: Block) => void) | null = null
@@ -86,7 +86,7 @@ export class Interaction {
     return HOTBAR_BLOCKS.map((block) => this.inventory.get(block) ?? 0)
   }
 
-  /** Держит ли игрок сейчас морковку — за ней ходят животные. */
+  /** Whether the player currently holds a carrot — animals follow it. */
   get holdingCarrot(): boolean {
     return this.activeBlock === Block.Carrot && (this.inventory.get(Block.Carrot) ?? 0) > 0
   }
@@ -95,7 +95,7 @@ export class Interaction {
     this.inventory.set(block, (this.inventory.get(block) ?? 0) + count)
   }
 
-  /** Тратит одно облачко под бросок. false — бросать нечего. */
+  /** Spends one cloud for a throw. False — nothing to throw. */
   consumeCloud(): boolean {
     const count = this.inventory.get(Block.Cloud) ?? 0
     if (count <= 0) return false
@@ -113,7 +113,7 @@ export class Interaction {
     this.activeSlot = (this.activeSlot + direction + count) % count
   }
 
-  /** Блок под прицелом. Используется и для подсветки прицела, и для действий. */
+  /** The block under the crosshair. Used for both highlight and actions. */
   currentTarget(): VoxelHit | null {
     this.player.eyePosition(this.origin)
     this.player.lookDirection(this.direction)
@@ -143,7 +143,7 @@ export class Interaction {
     const entity = this.entityRaycaster?.(this.origin, this.direction, PLAYER.meleeRange) ?? null
     const block = this.currentTarget()
 
-    // Сущность перед блоком — значит бьём по ней, а не копаем стену за ней.
+    // An entity in front of the block — strike it, don't dig the wall behind.
     if (entity !== null && (block === null || entity.distance <= block.distance)) {
       if (this.meleeCooldown > 0) return
       this.meleeCooldown = PLAYER.meleeCooldown
@@ -152,7 +152,7 @@ export class Interaction {
       return
     }
 
-    // С водой в руке ЛКМ черпает: вода не цель для кирки, но цель для ведра.
+    // With water in hand LMB scoops: water is no pickaxe target, but a bucket one.
     if (this.activeBlock === Block.Water) {
       if (this.breakCooldown > 0) return
       const waterHit = raycastVoxels(
@@ -169,9 +169,9 @@ export class Interaction {
       if (waterHit !== null && isWater(waterHit.id)) {
         this.breakCooldown = PLAYER.blockBreakCooldown
         this.world.setVoxel(waterHit.x, waterHit.y, waterHit.z, Block.Air)
-        // В ведро идёт только источник. Растёкшаяся вода — производная от источника:
-        // давать за неё заряд значило бы бесконечно копировать воду, а так ЛКМ по ней —
-        // просто способ подсушить лужу.
+        // Only a source goes into the bucket. Spread water derives from a source:
+        // rewarding it would copy water forever; this way LMB on it just dries
+        // the puddle.
         if (waterHit.id === Block.Water) this.add(Block.Water)
         this.onScooped?.()
         this.onBlockChanged?.(waterHit.x, waterHit.y, waterHit.z, waterHit.id, Block.Air)
@@ -187,7 +187,7 @@ export class Interaction {
   private breakBlock(hit: VoxelHit): void {
     this.removeCell(hit.x, hit.y, hit.z, hit.id)
 
-    // Парные блоки уходят целиком.
+    // Paired blocks go as a whole.
     if (isBed(hit.id)) {
       const partner = this.findBedPartner(hit.x, hit.y, hit.z, hit.id)
       if (partner !== null) this.removeCell(partner.x, partner.y, partner.z, partner.id, false)
@@ -199,7 +199,7 @@ export class Interaction {
     }
   }
 
-  /** @param withDrop половина пары не даёт второй предмет — иначе дюп. */
+  /** @param withDrop the pair's second half yields no item — that would dupe. */
   private removeCell(x: number, y: number, z: number, id: Block, withDrop = true): void {
     this.world.setVoxel(x, y, z, Block.Air)
     if (withDrop) {
@@ -217,7 +217,7 @@ export class Interaction {
     z: number,
     id: Block,
   ): { x: number; y: number; z: number; id: Block } | null {
-    // Старая одноклеточная кроватка пары не имеет.
+    // The legacy single-cell bed has no pair.
     if (id === Block.Bed) return null
     const want = id === Block.BedHead ? Block.BedFoot : Block.BedHead
     for (const [dx, dz] of [
@@ -237,13 +237,13 @@ export class Interaction {
     const hit = this.currentTarget()
     if (hit === null) return
 
-    // ПКМ по двери — открыть/закрыть, а не поставить блок рядом.
+    // RMB on a door toggles it rather than placing a block next to it.
     if (isDoor(hit.id)) {
       this.toggleDoor(hit.x, hit.y, hit.z)
       return
     }
 
-    // Нулевая нормаль значит, что луч начался внутри блока — грани для установки нет.
+    // A zero normal means the ray started inside a block — no face to place against.
     if (hit.nx === 0 && hit.ny === 0 && hit.nz === 0) return
 
     const block = this.activeBlock
@@ -270,7 +270,7 @@ export class Interaction {
       return
     }
 
-    // Иначе можно замуровать себя внутри собственного блока и застрять.
+    // Otherwise you could entomb yourself inside your own block and get stuck.
     if (blockDef(block).solid && playerOverlapsBlock(this.player.position, x, y, z)) {
       this.onNoRoom?.()
       return
@@ -280,10 +280,10 @@ export class Interaction {
     this.inventory.set(block, available - 1)
   }
 
-  /** Кроватка занимает две клетки по направлению взгляда: изголовье ближе к игроку. */
+  /** The bed takes two cells along the look direction: headboard closer to the player. */
   private placeBed(x: number, y: number, z: number, available: number): void {
     this.player.lookDirection(this.direction)
-    // Уводим одеяло по доминирующей горизонтальной оси взгляда.
+    // Extend the blanket along the dominant horizontal look axis.
     const alongX = Math.abs(this.direction.x) >= Math.abs(this.direction.z)
     const dx = alongX ? Math.sign(this.direction.x) || 1 : 0
     const dz = alongX ? 0 : Math.sign(this.direction.z) || 1
@@ -298,7 +298,7 @@ export class Interaction {
     this.inventory.set(Block.BedHead, available - 1)
   }
 
-  /** Дверь — две клетки в высоту, чтобы в проём проходил и игрок, и смурфик. */
+  /** The door is two cells tall so both the player and a smurf fit through. */
   private placeDoor(x: number, y: number, z: number, available: number): void {
     if (!this.cellFree(x, y + 1, z)) {
       this.onNoRoom?.()
@@ -329,7 +329,7 @@ export class Interaction {
     this.onBlockChanged?.(x, y, z, previous, block)
   }
 
-  /** Переключает обе клетки двери. Доступно и смурфикам через Village. */
+  /** Toggles both door cells. Also available to smurfs via Village. */
   toggleDoor(x: number, y: number, z: number): void {
     const id = this.world.getVoxel(x, y, z)
     if (!isDoor(id)) return
@@ -339,7 +339,7 @@ export class Interaction {
     for (const cy of [bottomY, bottomY + 1]) {
       const cell = this.world.getVoxel(x, cy, z)
       if (!isDoor(cell)) continue
-      // Закрыть дверь на себе нельзя — иначе игрок застревает в её объёме.
+      // You cannot close a door on yourself — the player would stick in its volume.
       if (next === Block.DoorClosed && playerOverlapsBlock(this.player.position, x, cy, z)) {
         this.onNoRoom?.()
         return

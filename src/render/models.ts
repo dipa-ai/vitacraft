@@ -3,14 +3,14 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { CREATURE_COLORS } from '../config/palette'
 
 /**
- * Модели существ. Блоки мира остаются острыми кубами — это и есть майнкрафт, — а живность
- * собирается из скруглённых боксов и получает покачивание. Скругление плюс анимация дают
- * почти всё ощущение «миленько», при том что внешних ассетов в проекте нет вообще.
+ * Creature models. World blocks stay sharp cubes — that IS the minecraft look — while
+ * critters assemble from rounded boxes and get a sway. Rounding plus animation delivers
+ * nearly all of the cuteness, with zero external assets in the project.
  */
 
 /**
- * Скруглённый бокс. segments=2 достаточно: при плавном шейдинге углы уже читаются
- * мягкими, а полигонов остаётся мало даже на десяток существ.
+ * A rounded box. segments=2 is enough: with smooth shading corners already read as
+ * soft, and the polygon count stays low even for a dozen creatures.
  */
 export function roundedBox(
   width: number,
@@ -21,14 +21,14 @@ export function roundedBox(
 ): THREE.Mesh {
   const safeRadius = Math.min(radius, Math.min(width, height, depth) / 2 - 0.001)
   const geometry = new RoundedBoxGeometry(width, height, depth, 2, safeRadius)
-  // Материал на экземпляр, а не общий: существа мигают при попадании, меняя свой цвет.
+  // Per-instance material, not shared: creatures flash on hit by changing their color.
   const material = new THREE.MeshLambertMaterial({ color })
   const mesh = new THREE.Mesh(geometry, material)
   mesh.castShadow = true
   return mesh
 }
 
-/** Собирает все материалы поддерева, чтобы мигать попаданием и корректно освобождать память. */
+/** Collects all subtree materials for hit flashes and correct memory disposal. */
 function collectMaterials(root: THREE.Object3D): THREE.MeshLambertMaterial[] {
   const materials: THREE.MeshLambertMaterial[] = []
   root.traverse((node) => {
@@ -41,17 +41,17 @@ function collectMaterials(root: THREE.Object3D): THREE.MeshLambertMaterial[] {
 
 export class CharacterModel {
   readonly group = new THREE.Group()
-  /** Всё тело: его мы качаем и сплющиваем, не трогая group, чтобы не ломать позицию. */
+  /** The whole body: swayed and squashed without touching group, keeping position intact. */
   readonly body = new THREE.Group()
 
   readonly limbs: THREE.Object3D[] = []
-  /** Пасть босса. Есть только у Витруляна. */
+  /** The boss's mouth. Only Vitrulyan has one. */
   mouth: THREE.Object3D | null = null
-  /** Уши кролика: прижимаются назад как телеграф прыжка. */
+  /** Rabbit ears: pinned back as the leap telegraph. */
   readonly ears: THREE.Object3D[] = []
   /**
-   * Дополнительное приседание, 0…1. Босс приседает перед прыжком — это и есть телеграф,
-   * по которому игрок понимает, что пора уклоняться.
+   * Extra squash, 0…1. The boss crouches before a leap — this is the telegraph that
+   * tells the player it is time to dodge.
    */
   squash = 0
   private readonly materials: THREE.MeshLambertMaterial[] = []
@@ -62,7 +62,7 @@ export class CharacterModel {
     this.group.add(this.body)
   }
 
-  /** Запоминает исходные цвета — по ним возвращаемся после вспышки попадания. */
+  /** Records base colors — restored after the hit flash. */
   finalize(): this {
     for (const material of collectMaterials(this.group)) {
       this.materials.push(material)
@@ -71,24 +71,24 @@ export class CharacterModel {
     return this
   }
 
-  /** Короткая белая вспышка: без неё непонятно, попал ли удар. */
+  /** A brief white flash: without it a landed hit is unreadable. */
   hitFlash(duration = 0.16): void {
     this.flash = duration
   }
 
   /**
-   * @param time общее время в секундах — для покачивания на месте.
-   * @param moveSpeed текущая горизонтальная скорость: чем быстрее, тем сильнее шаг.
+   * @param time total time in seconds — drives the idle sway.
+   * @param moveSpeed current horizontal speed: the faster, the stronger the stride.
    */
   animate(time: number, moveSpeed: number, dt: number): void {
     const walking = Math.min(1, moveSpeed / 4)
     const stride = Math.sin(time * 9) * 0.55 * walking
     for (let i = 0; i < this.limbs.length; i++) {
-      // Руки и ноги ходят в противофазе через чётность индекса.
+      // Arms and legs move in antiphase via index parity.
       this.limbs[i].rotation.x = i % 2 === 0 ? stride : -stride
     }
 
-    // Дыхание на месте, подпрыгивание при ходьбе и приседание-телеграф сверху.
+    // Idle breathing, walk bounce, and the telegraph squash on top.
     const idle = Math.sin(time * 2.2) * 0.02 * (1 - walking)
     const bounce = Math.abs(Math.sin(time * 9)) * 0.06 * walking
     this.body.position.y = idle + bounce
@@ -117,9 +117,9 @@ export class CharacterModel {
 }
 
 /**
- * Пара глаз-бусин на передней грани головы (перёд — это -Z), каждая с белым бликом.
- * Блик стоит несоразмерно дорого по вниманию к деталям и почти ничего по коду: без него
- * глаза выглядят мёртвыми дырками, с ним лицо оживает.
+ * A pair of bead eyes on the head's front face (front is -Z), each with a white glint.
+ * The glint buys outsized attention-to-detail for almost no code: without it the eyes
+ * look like dead holes, with it the face comes alive.
  */
 function addEyes(
   head: THREE.Object3D,
@@ -148,8 +148,8 @@ function addEyes(
 }
 
 /**
- * Улыбка из трёх кубиков: середина ниже краёв. Одной планкой улыбка не читается —
- * получается просто полоска.
+ * A three-cube smile: middle lower than the edges. A single bar does not read as a
+ * smile — it is just a stripe.
  */
 function addSmile(
   head: THREE.Object3D,
@@ -173,7 +173,7 @@ function addSmile(
   }
 }
 
-/** Игрок в третьем лице. В первом лице модель скрывается. */
+/** The third-person player. Hidden in first person. */
 export function createPlayerModel(): CharacterModel {
   const model = new CharacterModel()
   const c = CREATURE_COLORS
@@ -181,7 +181,7 @@ export function createPlayerModel(): CharacterModel {
   const legs = new THREE.Group()
   for (const side of [-1, 1]) {
     const leg = roundedBox(0.22, 0.55, 0.24, c.playerPants, 0.06)
-    // Поворачиваем ногу вокруг бедра, поэтому сдвигаем меш вниз внутри своей группы.
+    // The leg rotates around the hip, so the mesh shifts down within its group.
     const pivot = new THREE.Group()
     leg.position.y = -0.275
     pivot.add(leg)
@@ -214,7 +214,7 @@ export function createPlayerModel(): CharacterModel {
   return model.finalize()
 }
 
-/** Ночная зверюшка: тёмный колобок со светящимися глазами. Милая и жуткая разом. */
+/** Night critter: a dark blob with glowing eyes. Cute and creepy at once. */
 export function createLurkerModel(): CharacterModel {
   const model = new CharacterModel()
   const c = CREATURE_COLORS
@@ -233,7 +233,7 @@ export function createLurkerModel(): CharacterModel {
   body.position.y = 0.48
   model.body.add(body)
 
-  // Глаза светятся сами (emissive) — ночью видно именно их, и это правильно жутко.
+  // The eyes are self-lit (emissive) — at night you see exactly them; properly creepy.
   for (const side of [-1, 1]) {
     const eye = roundedBox(0.13, 0.16, 0.06, c.lurkerEye, 0.05)
     eye.position.set(side * 0.15, 0.56, -0.31)
@@ -243,7 +243,7 @@ export function createLurkerModel(): CharacterModel {
     model.body.add(eye)
   }
 
-  // Рваные ушки, чтобы силуэт отличался от животных.
+  // Ragged little ears so the silhouette differs from the animals.
   for (const side of [-1, 1]) {
     const ear = roundedBox(0.12, 0.26, 0.08, c.lurkerBodyDark, 0.04)
     ear.position.set(side * 0.22, 0.86, 0.02)
@@ -256,7 +256,7 @@ export function createLurkerModel(): CharacterModel {
 
 export type AnimalKind = 'bunny' | 'sheep' | 'chick'
 
-/** Дневная живность. Один конструктор на все виды — различаются пропорциями и цветом. */
+/** Daytime wildlife. One constructor for all kinds — they differ in proportion and color. */
 export function createAnimalModel(kind: AnimalKind): CharacterModel {
   const model = new CharacterModel()
   const c = CREATURE_COLORS
@@ -318,7 +318,7 @@ export function createAnimalModel(kind: AnimalKind): CharacterModel {
     return model.finalize()
   }
 
-  // Цыплёнок.
+  // The chick.
   for (const side of [-1, 1]) {
     const leg = roundedBox(0.05, 0.12, 0.05, c.birdBeak, 0.015)
     const pivot = new THREE.Group()
@@ -342,11 +342,11 @@ export function createAnimalModel(kind: AnimalKind): CharacterModel {
 }
 
 /**
- * Смурфик — маленький синий человечек в белом колпачке. Модель оригинальная, собранная
- * из скруглённых боксов: это не воспроизведение лицензированных персонажей, только имя,
- * которое просил игрок.
+ * A smurf — a small blue fellow in a white cap. The model is original, assembled from
+ * rounded boxes: not a reproduction of the licensed characters, only the name the
+ * player asked for.
  *
- * @param elder старейшина носит красный колпачок — он выдаёт задания.
+ * @param elder the elder wears a red cap — he hands out quests.
  */
 export function createSmurfModel(elder = false): CharacterModel {
   const model = new CharacterModel()
@@ -376,7 +376,7 @@ export function createSmurfModel(elder = false): CharacterModel {
     model.limbs.push(pivot)
   }
 
-  // Голова крупная относительно тела — главный приём «миленькости».
+  // The head is large relative to the body — the primary cuteness trick.
   const head = roundedBox(0.44, 0.4, 0.42, c.smurfSkin, 0.11)
   head.position.y = 0.78
   addEyes(head, 0.42, 0.105, 0x2b2340, 0.105, 0.13)
@@ -395,15 +395,15 @@ export function createSmurfModel(elder = false): CharacterModel {
 }
 
 /**
- * Витрулян — гигантский рыжий кролик: пушистый, с огромными глазами, резцами, длинными
- * ушами и хвостом-помпоном. Милый и слегка жуткий одновременно. Модель строится
- * в единичном масштабе, а до боевого размера её увеличивает BOSS.scale.
+ * Vitrulyan — a giant ginger rabbit: fluffy, with huge eyes, buck teeth, long ears
+ * and a pompom tail. Cute and slightly creepy at once. The model is built at unit
+ * scale; BOSS.scale blows it up to fighting size.
  */
 export function createBossModel(): CharacterModel {
   const model = new CharacterModel()
   const c = CREATURE_COLORS
 
-  // Задние лапы больше передних — это кроличий силуэт даже без деталей.
+  // Hind legs bigger than front ones — the rabbit silhouette even without detail.
   for (const side of [-1, 1]) {
     const front = roundedBox(0.3, 0.32, 0.32, c.bossFurDark, 0.13)
     const frontPivot = new THREE.Group()
@@ -430,7 +430,7 @@ export function createBossModel(): CharacterModel {
   patch.position.set(0, 0.7, -0.6)
   model.body.add(patch)
 
-  // Огромные глаза с бликами — милота и лёгкая жуть одновременно.
+  // Huge eyes with glints — cuteness and mild creepiness at once.
   for (const side of [-1, 1]) {
     const eye = roundedBox(0.36, 0.42, 0.16, c.bossEye, 0.15)
     eye.position.set(side * 0.28, 1.32, -0.58)
@@ -444,7 +444,7 @@ export function createBossModel(): CharacterModel {
     model.body.add(glint)
   }
 
-  // Носик и пасть с двумя большими резцами.
+  // A little nose and a mouth with two big buck teeth.
   const nose = roundedBox(0.16, 0.12, 0.1, c.bossMouth, 0.05)
   nose.position.set(0, 1.08, -0.64)
   model.body.add(nose)
@@ -460,7 +460,7 @@ export function createBossModel(): CharacterModel {
     model.body.add(tooth)
   }
 
-  // Длинные уши на шарнирах: прижимаются назад как телеграф прыжка.
+  // Long hinged ears: pinned back as the leap telegraph.
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group()
     const ear = roundedBox(0.26, 0.85, 0.16, c.bossFurDark, 0.11)
@@ -476,7 +476,7 @@ export function createBossModel(): CharacterModel {
     model.ears.push(pivot)
   }
 
-  // Хвост-помпон сзади.
+  // A pompom tail at the back.
   const tail = roundedBox(0.34, 0.34, 0.3, c.bossTail, 0.15)
   tail.position.set(0, 0.82, 0.66)
   model.body.add(tail)

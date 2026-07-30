@@ -6,30 +6,30 @@ import type { Fx } from '../render/fx'
 import { nightness } from '../render/scene'
 import type { World } from '../world/world'
 
-/** Порог, после которого «уже ночь» и лезут враги. */
+/** Threshold past which it is "night proper" and enemies come out. */
 const NIGHT_THRESHOLD = 0.55
 
 /**
- * Ночной режим: с темнотой вокруг игрока и деревни появляются тёмные зверюшки.
- * В герметичном доме безопасно — не потому что есть проверка «игрок внутри», а потому
- * что враг физически не проходит сквозь стены и закрытую дверь.
- * На рассвете все растворяются; из убитых выпадают облачка.
+ * Night mode: with darkness, dark critters appear around the player and the village.
+ * A sealed house is safe — not because of an "is the player inside" check, but
+ * because enemies physically cannot pass walls and closed doors.
+ * At dawn they all dissolve; killed ones drop clouds.
  */
 export class NightManager {
   readonly lurkers: Lurker[] = []
   isNight = false
   private spawnTimer = 0
-  /** Ночь целиком без смерти игрока — для квеста «переживи ночь». */
+  /** A whole night without the player dying — for the "survive the night" quest. */
   private wholeNight = true
 
-  /** Максимум одновременных врагов — зависит от стадии квеста, ставит main. */
+  /** Max concurrent enemies — depends on quest stage; set by main. */
   maxEnemies: number = NIGHT.maxEnemiesEarly
 
   onDusk: (() => void) | null = null
   onDawn: ((survivedWholeNight: boolean) => void) | null = null
-  /** Игрока укусили. */
+  /** The player got bitten. */
   onBite: ((damage: number) => void) | null = null
-  /** Из убитой зверюшки выпали облачка. */
+  /** Clouds dropped from a killed critter. */
   onCloudDrop: ((count: number, at: THREE.Vector3) => void) | null = null
 
   constructor(
@@ -38,14 +38,24 @@ export class NightManager {
     private readonly fx: Fx,
   ) {}
 
-  /** Позиции живых врагов — для испуга смурфиков и бегства животных. */
+  /** Positions of live enemies — for scaring smurfs and routing animals. */
   get threatPositions(): THREE.Vector3[] {
     return this.lurkers.filter((lurker) => !lurker.dead && !lurker.dissolving).map((l) => l.position)
   }
 
-  /** Игрок умер ночью — эта ночь квест не закрывает. */
+  /** The player died tonight — this night does not complete the quest. */
   markPlayerDied(): void {
     this.wholeNight = false
+  }
+
+  /**
+   * Aligns the manager with a restored time of day. Loading in the middle of a night
+   * must not count the remaining seconds as surviving a whole night.
+   */
+  restoreAtTime(dayFraction: number): void {
+    this.isNight = nightness(dayFraction) > NIGHT_THRESHOLD
+    this.wholeNight = !this.isNight
+    this.spawnTimer = this.isNight ? 2 : 0
   }
 
   update(
@@ -65,7 +75,7 @@ export class NightManager {
       this.onDusk?.()
     } else if (!nightNow && this.isNight) {
       this.isNight = false
-      // Рассвет: все растворяются без дропа.
+      // Dawn: everyone dissolves with no drops.
       for (const lurker of this.lurkers) lurker.startDissolve()
       this.onDawn?.(this.wholeNight)
     }
@@ -82,7 +92,7 @@ export class NightManager {
     for (let i = this.lurkers.length - 1; i >= 0; i--) {
       const lurker = this.lurkers[i]
 
-      // Убит игроком — облачка и салют. Растворение на рассвете дропа не даёт.
+      // Killed by the player — clouds and confetti. Dawn dissolution drops nothing.
       if (lurker.dead && !lurker.dissolving) {
         const drop =
           NIGHT.cloudDropMin +
@@ -108,7 +118,7 @@ export class NightManager {
     }
   }
 
-  /** Цель — ближайший из игрока и гуляющих смурфиков (спрятавшихся не видно). */
+  /** Target: the nearest of the player and strolling smurfs (hidden ones unseen). */
   private pickTarget(
     lurker: Lurker,
     playerPosition: THREE.Vector3,
@@ -138,7 +148,7 @@ export class NightManager {
       const y = this.world.groundY(x, z)
       if (y <= WORLD.seaLevel + 1) continue
 
-      // На подходе может не быть чанков — догружаем без перецентровки мира.
+      // Chunks may be missing on approach — generate them without recentering the world.
       this.world.ensureChunkAt(x, z)
 
       const lurker = new Lurker(new THREE.Vector3(x, y, z))
@@ -155,7 +165,7 @@ export class NightManager {
     this.lurkers.splice(index, 1)
   }
 
-  /** При смерти игрока враги отступают — честнее, чем толпа у точки возрождения. */
+  /** Enemies back off when the player dies — fairer than a mob at the respawn point. */
   scatter(): void {
     for (const lurker of this.lurkers) lurker.startDissolve()
   }

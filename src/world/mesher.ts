@@ -3,39 +3,39 @@ import { WORLD } from '../config/tuning'
 import { Block, blockDef, isBed, isDoor, isOpaque, isWater, waterLevel } from './blocks'
 
 /**
- * Мешер чанка: строит геометрию с отсечением невидимых граней и запечённым в vertex colors
- * ambient occlusion. Основа взята из официального мануала Three.js
- * (manual/examples/voxel-geometry-culled-faces-ui.html) и доработана под наш случай:
- * текстур нет, поэтому вместо атрибута uv пишем color.
+ * Chunk mesher: builds geometry with hidden-face culling and ambient occlusion baked
+ * into vertex colors. Based on the official Three.js manual
+ * (manual/examples/voxel-geometry-culled-faces-ui.html), adapted for our case:
+ * there are no textures, so we write a color attribute instead of uv.
  *
- * AO здесь не украшение, а необходимость: без него два соседних блока одного цвета
- * сливаются в неразличимую кашу, и мир перестаёт читаться.
+ * AO is not decoration here but a necessity: without it two same-colored neighbors
+ * merge into an unreadable mush and the world stops parsing visually.
  *
- * Функция чистая — знает о мире только через reader, поэтому её легко тестировать
- * и при необходимости унести в Web Worker.
+ * The function is pure — it sees the world only through the reader, which makes it
+ * easy to test and, if needed, to move into a Web Worker.
  */
 
-/** Доступ к воксeлю в мировых координатах. Позволяет корректно смешивать границы чанков. */
+/** Voxel access in world coordinates. Lets chunk borders mesh correctly. */
 export type VoxelReader = (x: number, y: number, z: number) => Block
 
 export interface MeshData {
   positions: Float32Array
   normals: Float32Array
   /**
-   * RGBA по вершине, itemSize 4. Альфа нужна, чтобы стекло и вода имели разную
-   * прозрачность внутри одного прохода рендера и одного материала.
+   * Per-vertex RGBA, itemSize 4. Alpha lets glass and water have different opacity
+   * within a single render pass and a single material.
    */
   colors: Float32Array
   indices: Uint32Array
 }
 
-/** Число компонент в атрибуте color. */
+/** Component count of the color attribute. */
 export const COLOR_COMPONENTS = 4
 
 export interface ChunkMeshResult {
-  /** Непрозрачная геометрия. null, если чанк пустой. */
+  /** Opaque geometry. Null when the chunk is empty. */
   opaque: MeshData | null
-  /** Вода и стекло — рисуются отдельным проходом для корректной прозрачности. */
+  /** Water and glass — drawn in a separate pass for correct transparency. */
   transparent: MeshData | null
 }
 
@@ -43,10 +43,10 @@ type Vec3 = readonly [number, number, number]
 
 interface FaceDef {
   readonly dir: Vec3
-  /** Порядок углов задаёт триангуляцию (0,1,2) + (2,1,3) с наружной намоткой. */
+  /** Corner order defines triangulation (0,1,2) + (2,1,3) with outward winding. */
   readonly corners: readonly Vec3[]
   readonly tint: number
-  /** Две оси, вдоль которых лежит грань — по ним ищем соседей для AO. */
+  /** The two axes the face lies along — AO neighbors are sampled along them. */
   readonly axisA: 0 | 1 | 2
   readonly axisB: 0 | 1 | 2
   readonly isTop: boolean
@@ -146,16 +146,16 @@ const AXIS: readonly Vec3[] = [
   [0, 0, 1],
 ]
 
-/** Перевод sRGB-компоненты в линейное пространство — иначе цвета выцветают на свету. */
+/** sRGB component to linear space — otherwise colors wash out in the light. */
 function srgbToLinear(c: number): number {
   return c < 0.04045 ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4)
 }
 
 /**
- * Микро-вариация яркости на воксель. Детерминированная, чтобы меш не мерцал при
- * перестройке. Разбивает крупные однотонные плоскости, которые иначе читаются как
- * одно плоское пятно цвета. Амплитуда берётся из блока: у природных блоков заметная,
- * у блоков для стройки почти нулевая — иначе дома игрока выглядят грязными.
+ * Per-voxel brightness micro-variation. Deterministic so meshes don't shimmer on
+ * rebuild. It breaks up large flat-colored planes that would otherwise read as one
+ * flat blob. The amplitude comes from the block: noticeable on natural blocks and
+ * near-zero on building blocks — otherwise player houses look dirty.
  */
 function voxelJitter(x: number, y: number, z: number, amplitude: number): number {
   if (amplitude === 0) return 1
@@ -167,8 +167,8 @@ function voxelJitter(x: number, y: number, z: number, amplitude: number): number
 }
 
 /**
- * AO угла грани по трём соседям в плоскости этой грани.
- * Классическая схема: два бока перекрыты → максимальное затенение.
+ * Face-corner AO from the three neighbors in the face's plane.
+ * The classic scheme: both sides occluded → maximum darkening.
  */
 function cornerAO(
   reader: VoxelReader,
@@ -200,7 +200,7 @@ function cornerAO(
   return 3 - (s1 + s2 + cn)
 }
 
-/** Накопитель геометрии одного прохода рендера. */
+/** Geometry accumulator for one render pass. */
 class Builder {
   positions: number[] = []
   normals: number[] = []
@@ -222,8 +222,8 @@ class Builder {
 }
 
 /**
- * Строит геометрию чанка. Координаты вершин локальны для чанка — мировое смещение
- * задаётся позицией меша, так что float не теряет точность на больших координатах.
+ * Builds chunk geometry. Vertex coordinates are chunk-local — the world offset comes
+ * from the mesh position, so floats keep precision at large coordinates.
  */
 export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): ChunkMeshResult {
   const { chunkSizeX, chunkSizeY, chunkSizeZ } = WORLD
@@ -241,14 +241,14 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
         const wz = originZ + z
         const id = reader(wx, wy, wz)
         if (id === Block.Air) continue
-        // Двери рисуются отдельными мешами (см. render/doors.ts), а не кубами.
+        // Doors are drawn as separate meshes (see render/doors.ts), not cubes.
         if (isDoor(id)) continue
 
         const def = blockDef(id)
         const target = def.transparent === true ? transparent : opaque
         const water = isWater(id)
-        // Высота поверхности: у воды зависит от уровня (лужа читается как лужа),
-        // у частичных блоков (кроватка, грядка) берётся из реестра.
+        // Surface height: water derives it from its level (a puddle reads as a
+        // puddle); partial blocks (bed, carrot patch) take it from the registry.
         let yTop = def.height ?? 1.0
         if (water) {
           const waterAbove = isWater(reader(wx, wy + 1, wz))
@@ -261,13 +261,13 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
           const ny = wy + face.dir[1]
           const nz = wz + face.dir[2]
           const neighbor = reader(nx, ny, nz)
-          // Грань не нужна, если сосед её полностью закрывает или это тот же блок
-          // (так гасятся внутренние грани воды и стекла).
+          // The face is unnecessary if the neighbor fully covers it or is the same
+          // block (this culls interior faces of water and glass).
           if (isOpaque(neighbor) || neighbor === id) continue
-          // Между двумя водами грань рисует только более высокая сторона, иначе на
-          // границе уровней два копланарных квада мерцают друг о друга.
+          // Between two waters only the higher side draws the face, or two coplanar
+          // quads z-fight at the level boundary.
           if (water && isWater(neighbor) && waterLevel(neighbor) >= waterLevel(id)) continue
-          // Половины кроватки — один предмет: внутренняя грань между ними не нужна.
+          // Bed halves are one item: no interior face between them.
           if (isBed(id) && isBed(neighbor)) continue
 
           const hex = face.isTop
@@ -276,7 +276,7 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
               ? def.bottomColor ?? def.color
               : def.color
           const alpha = def.opacity ?? 1
-          // glow > 1 выводит цвет за единицу — его подхватывает порог блума.
+          // glow > 1 pushes color past 1.0 — the bloom threshold picks it up.
           const shade = face.tint * jitter * (def.glow ?? 1)
           const baseR = srgbToLinear(((hex >> 16) & 0xff) / 255) * shade
           const baseG = srgbToLinear(((hex >> 8) & 0xff) / 255) * shade
@@ -293,8 +293,8 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
             )
             target.normals.push(face.dir[0], face.dir[1], face.dir[2])
 
-            // У воды и стекла AO выглядит грязно, поэтому считаем его только для
-            // непрозрачных блоков.
+            // AO looks dirty on water and glass, so it is computed only for
+            // opaque blocks.
             const level =
               def.transparent === true
                 ? 1
@@ -303,8 +303,8 @@ export function meshChunk(chunkX: number, chunkZ: number, reader: VoxelReader): 
             target.colors.push(baseR * level, baseG * level, baseB * level, alpha)
           }
 
-          // Квад режется на два треугольника, и при разном AO по диагоналям появляется
-          // характерный «излом». Разворот диагонали убирает его.
+          // The quad splits into two triangles, and unequal diagonal AO creates the
+          // telltale crease. Flipping the diagonal removes it.
           const flip = ao[0] + ao[3] > ao[1] + ao[2]
           if (flip) {
             target.indices.push(ndx, ndx + 1, ndx + 3, ndx, ndx + 3, ndx + 2)

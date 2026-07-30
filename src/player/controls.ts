@@ -5,16 +5,16 @@ import type { Player } from './player'
 export type CameraMode = 'first' | 'third'
 
 /**
- * Ввод и захват курсора. Pointer lock включён в обоих режимах камеры: если в третьем
- * лице переключаться на вращение перетаскиванием, управление начинает ощущаться
- * сломанным. Поэтому третье лицо — это только смещение камеры, а мышь работает одинаково.
+ * Input and pointer capture. Pointer lock stays on in both camera modes: switching
+ * third person to drag-rotation makes controls feel broken. So third person is just
+ * a camera offset and the mouse behaves identically.
  */
 export class Controls {
   readonly input: MoveInput = { forward: 0, right: 0, jump: false, run: false }
   cameraMode: CameraMode = 'first'
   locked = false
 
-  /** ЛКМ удерживают — удар повторяется по кулдауну. */
+  /** LMB held — the strike repeats on cooldown. */
   attackHeld = false
 
   onPlace: (() => void) | null = null
@@ -24,6 +24,7 @@ export class Controls {
   onCameraToggle: ((mode: CameraMode) => void) | null = null
   onUnlock: (() => void) | null = null
   onToggleResources: (() => void) | null = null
+  onToggleHelp: (() => void) | null = null
 
   private readonly keys = new Set<string>()
 
@@ -38,7 +39,7 @@ export class Controls {
     document.addEventListener('mousedown', this.onMouseDown)
     document.addEventListener('mouseup', this.onMouseUp)
     document.addEventListener('wheel', this.onWheel, { passive: false })
-    // Иначе ПКМ открывает контекстное меню вместо установки блока.
+    // Otherwise RMB opens the context menu instead of placing a block.
     this.canvas.addEventListener('contextmenu', this.onContextMenu)
   }
 
@@ -64,7 +65,7 @@ export class Controls {
     if (!this.locked) return
     this.player.yaw -= event.movementX * CAMERA.mouseSensitivity
     this.player.pitch -= event.movementY * CAMERA.mouseSensitivity
-    // Чуть меньше 90°, иначе на зените камера переворачивается.
+    // Slightly under 90°, or the camera flips at the zenith.
     const limit = Math.PI / 2 - 0.01
     this.player.pitch = Math.max(-limit, Math.min(limit, this.player.pitch))
   }
@@ -86,14 +87,21 @@ export class Controls {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    // Tab уводит фокус с канваса — без preventDefault панель ресурсов ломала бы ввод.
+    // Tab moves focus off the canvas — without preventDefault the panel would break input.
     if (event.code === 'Tab') {
       event.preventDefault()
       if (!event.repeat) this.onToggleResources?.()
       return
     }
 
-    // F5 в браузере перезагружает страницу — без preventDefault смена вида убивала бы игру.
+    if (event.code === 'KeyQ') {
+      if (!this.locked) return
+      event.preventDefault()
+      if (!event.repeat) this.onToggleHelp?.()
+      return
+    }
+
+    // Browser F5 reloads the page — without preventDefault the view toggle would kill the game.
     if (event.code === 'F5' || event.code === 'KeyV') {
       event.preventDefault()
       if (event.repeat) return

@@ -8,7 +8,7 @@ import { WaterSim, type WaterWorld } from './water'
 
 const { chunkSizeX, chunkSizeY, chunkSizeZ, viewRadius, remeshPerFrame } = WORLD
 
-/** Из мировой координаты в координату чанка. */
+/** World coordinate to chunk coordinate. */
 export function toChunkCoord(v: number): number {
   return Math.floor(v / chunkSizeX)
 }
@@ -22,11 +22,11 @@ export class World {
   private readonly opaqueMaterial: THREE.MeshLambertMaterial
   private readonly transparentMaterial: THREE.MeshLambertMaterial
 
-  /** Блоки, изменённые игроком — только они попадают в сохранение. */
+  /** Blocks changed by the player — the only thing that goes into the save. */
   readonly edits = new Map<string, Block>()
 
   readonly water = new WaterSim()
-  /** Узкий доступ для симуляции воды: пишет без записи в дифф игрока. */
+  /** Narrow access for the water sim: writes without touching the player's diff. */
   private readonly waterAccess: WaterWorld = {
     getVoxel: (x, y, z) => this.reader(x, y, z),
     setFluid: (x, y, z, id) => this.setVoxel(x, y, z, id, false),
@@ -36,7 +36,7 @@ export class World {
     this.terrain = new TerrainGenerator(seed)
     this.group.name = 'world'
 
-    // flatShading даёт чёткие воксельные грани, vertexColors несут цвет блока и AO.
+    // flatShading keeps voxel faces crisp; vertexColors carry block color and AO.
     this.opaqueMaterial = new THREE.MeshLambertMaterial({
       vertexColors: true,
       flatShading: true,
@@ -46,14 +46,14 @@ export class World {
       flatShading: true,
       transparent: true,
       depthWrite: false,
-      // Чтобы поверхность воды была видна и снизу, из-под воды.
+      // So the water surface is visible from below too, when underwater.
       side: THREE.DoubleSide,
     })
   }
 
-  /** Читалка вокселей в мировых координатах. Передаётся мешеру и рейкасту. */
+  /** Voxel reader in world coordinates. Handed to the mesher and the raycaster. */
   readonly reader: VoxelReader = (x, y, z) => {
-    // Ниже мира — камень: и как пол, и чтобы не рисовать нижние грани у y=0.
+    // Below the world is stone: acts as a floor and culls bottom faces at y=0.
     if (y < 0) return Block.Stone
     if (y >= chunkSizeY) return Block.Air
     const chunk = this.chunks.get(chunkKey(toChunkCoord(x), toChunkCoord(z)))
@@ -72,8 +72,8 @@ export class World {
   }
 
   /**
-   * Ставит блок и помечает на перестройку все затронутые чанки. Соседние чанки тоже
-   * попадают в список: от блока на границе зависят и отсечение граней, и AO у соседа.
+   * Places a block and marks all affected chunks for a rebuild. Neighboring chunks
+   * are included: a border block affects both face culling and the neighbor's AO.
    */
   setVoxel(x: number, y: number, z: number, id: Block, recordEdit = true): void {
     x = Math.floor(x)
@@ -87,10 +87,10 @@ export class World {
     chunk.set(x - chunk.cx * chunkSizeX, y, z - chunk.cz * chunkSizeZ, id)
     if (recordEdit) this.edits.set(`${x},${y},${z}`, id)
 
-    // Любое изменение будит воду рядом: копнул у озера — вода затекает в яму.
+    // Any change wakes nearby water: dig by a lake and water flows into the pit.
     this.water.wake(this.waterAccess, x, y, z)
 
-    // 3×3 вокруг изменённого блока: захватывает и рёбра, и углы, от которых зависит AO.
+    // 3×3 around the changed block: covers edges and corners that drive AO.
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
         const neighbor = this.chunks.get(
@@ -108,9 +108,9 @@ export class World {
   }
 
   /**
-   * Держит вокруг игрока прогруженную область. Данные генерируются на радиус на единицу
-   * больше видимого: мешеру нужны настоящие соседи, иначе на границах области возникает
-   * стена лишних граней и рваный AO.
+   * Keeps a loaded area around the player. Data generates one radius beyond the
+   * visible range: the mesher needs real neighbors, or the area border grows a wall
+   * of stray faces and ragged AO.
    */
   ensureAround(worldX: number, worldZ: number): void {
     const ccx = toChunkCoord(worldX)
@@ -123,7 +123,7 @@ export class World {
       }
     }
 
-    // Ближние чанки мешим первыми, чтобы мир вокруг игрока появлялся сразу.
+    // Mesh near chunks first so the world pops in around the player immediately.
     const pending: { chunk: Chunk; dist: number }[] = []
     for (let dz = -viewRadius; dz <= viewRadius; dz++) {
       for (let dx = -viewRadius; dx <= viewRadius; dx++) {
@@ -139,7 +139,7 @@ export class World {
     this.unloadFar(ccx, ccz)
   }
 
-  /** Создаёт и генерирует чанк, если его ещё нет. */
+  /** Creates and generates a chunk if it does not exist yet. */
   private chunkAt(cx: number, cz: number): Chunk {
     const key = chunkKey(cx, cz)
     let chunk = this.chunks.get(key)
@@ -153,7 +153,7 @@ export class World {
     return chunk
   }
 
-  /** Возвращает правки игрока в заново сгенерированный чанк. */
+  /** Re-applies player edits to a freshly generated chunk. */
   private applyEditsTo(chunk: Chunk): void {
     if (this.edits.size === 0) return
     const minX = chunk.cx * chunkSizeX
@@ -169,7 +169,7 @@ export class World {
     }
   }
 
-  /** Выгружает далёкие чанки, чтобы память и число мешей не росли бесконечно. */
+  /** Unloads distant chunks so memory and mesh count don't grow forever. */
   private unloadFar(ccx: number, ccz: number): void {
     const limit = viewRadius + 3
     for (const [key, chunk] of this.chunks) {
@@ -182,7 +182,7 @@ export class World {
     }
   }
 
-  /** Перестраивает ограниченное число мешей за кадр и тикает воду. */
+  /** Rebuilds a bounded number of meshes per frame and ticks the water sim. */
   update(dt = 0): void {
     if (dt > 0) this.water.update(dt, this.waterAccess)
 
@@ -190,7 +190,7 @@ export class World {
     while (built < remeshPerFrame && this.remeshQueue.length > 0) {
       const chunk = this.remeshQueue.shift()
       if (chunk === undefined) break
-      // Чанк мог быть выгружен, пока стоял в очереди.
+      // The chunk may have been unloaded while sitting in the queue.
       if (!this.chunks.has(chunkKey(chunk.cx, chunk.cz))) continue
       this.buildMesh(chunk)
       built++
@@ -198,9 +198,9 @@ export class World {
   }
 
   /**
-   * Строит ожидающие меши синхронно. Нужно на старте, чтобы первый кадр не был пустым.
-   * Очередь отсортирована от ближних чанков к дальним, поэтому лимит даёт готовую
-   * область вокруг игрока, а даль догружается уже в игре через update().
+   * Builds pending meshes synchronously. Needed at startup so the first frame isn't
+   * empty. The queue is sorted near-to-far, so the limit yields a ready area around
+   * the player while the distance streams in later via update().
    */
   flushRemesh(maxChunks = Infinity): void {
     let built = 0
@@ -267,7 +267,7 @@ export class World {
     mesh.geometry.dispose()
   }
 
-  /** Верх любой твёрдой геометрии в столбце — включая кроны деревьев и постройки. */
+  /** Top of any solid geometry in a column — tree crowns and buildings included. */
   surfaceY(x: number, z: number): number {
     const ix = Math.floor(x)
     const iz = Math.floor(z)
@@ -278,24 +278,24 @@ export class World {
   }
 
   /**
-   * Высота РЕЛЬЕФА без растительности — для спавна существ. surfaceY здесь не годится:
-   * листва solid, и точка прихода попадала на крону дерева, откуда смурфик падал.
-   * Считается чистой математикой террагена, поэтому работает и вне прогруженных чанков.
+   * TERRAIN height without vegetation — for creature spawns. surfaceY won't do here:
+   * leaves are solid, and arrival points used to land on tree crowns that smurfs then
+   * fell off. Computed as pure terrain math, so it works beyond loaded chunks too.
    */
   groundY(x: number, z: number): number {
     return this.terrain.surfaceHeight(Math.floor(x), Math.floor(z)) + 1
   }
 
-  /** Сгенерирован ли чанк под этой мировой координатой. */
+  /** Whether the chunk under this world coordinate has been generated. */
   isChunkGenerated(x: number, z: number): boolean {
     const chunk = this.chunks.get(chunkKey(toChunkCoord(Math.floor(x)), toChunkCoord(Math.floor(z))))
     return chunk !== undefined && chunk.generated
   }
 
   /**
-   * Догенерирует чанки вокруг точки, не трогая выгрузку дальних (в отличие от
-   * ensureAround, который перецентрировал бы весь прогруз). Нужно для спавна существ
-   * на подходе к деревне.
+   * Generates chunks around a point without touching far-chunk unloading (unlike
+   * ensureAround, which would recenter the whole stream). Needed to spawn creatures
+   * on approach to the village.
    */
   ensureChunkAt(x: number, z: number, radius = 1): void {
     const ccx = toChunkCoord(Math.floor(x))

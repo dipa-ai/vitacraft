@@ -10,11 +10,11 @@ import type { Fx } from '../render/fx'
 import type { World } from '../world/world'
 
 /**
- * Расходящаяся ударная волна от прыжка босса.
+ * The expanding shockwave from the boss's leap.
  *
- * Урон наносится в момент, когда фронт волны проходит через игрока, и только если тот
- * стоит на земле. Именно из этого рождается способ уклонения: подпрыгнуть в нужный
- * момент. Проверять всю зону сразу нельзя — тогда прыжок ничего не давал бы.
+ * Damage lands the moment the wave front passes through the player, and only while
+ * they stand on the ground. That is where the dodge comes from: jump at the right
+ * moment. Checking the whole area at once would make jumping worthless.
  */
 class Shockwave {
   radius = 0
@@ -27,12 +27,12 @@ class Shockwave {
   ) {}
 }
 
-/** Толщина фронта волны. Слишком тонкий фронт игрок бы просто перескакивал по случайности. */
+/** Wave front thickness. Too thin a front would be skipped over by pure chance. */
 const WAVE_THICKNESS = 1.6
 
 /**
- * Кратчайшее расстояние от точки до отрезка. Нужно, чтобы быстрый снаряд проверялся
- * по всему пройденному за кадр пути: сверка одних конечных точек пропускает попадания.
+ * Shortest distance from a point to a segment. Lets a fast projectile be checked
+ * along its whole per-frame path: endpoint-only checks miss hits.
  */
 function distanceToSegment(
   point: THREE.Vector3,
@@ -60,7 +60,7 @@ export class Combat {
 
   private throwCooldown = 0
   boss: Boss | null = null
-  /** Дополнительные цели (ночные враги). Список подставляет менеджер ночи. */
+  /** Extra targets (night enemies). The night manager supplies the list. */
   enemies: readonly Entity[] = []
 
   onPlayerHurt: (() => void) | null = null
@@ -73,7 +73,7 @@ export class Combat {
     private readonly fx: Fx,
   ) {}
 
-  /** Все живые цели для ЛКМ и снарядов игрока. */
+  /** All live targets for LMB and player projectiles. */
   private *targets(): Iterable<Entity> {
     if (this.boss !== null && !this.boss.dead) yield this.boss
     for (const enemy of this.enemies) {
@@ -82,8 +82,8 @@ export class Combat {
   }
 
   /**
-   * Метательное игрока по клавише F. Заряд (облачко) проверяет и тратит вызывающий:
-   * у боевой системы нет доступа к инвентарю, и это правильно.
+   * The player's throwable on F. The caller checks and spends the ammo (a cloud):
+   * the combat system has no inventory access, and rightly so.
    */
   throwFromPlayer(): boolean {
     if (this.throwCooldown > 0) return false
@@ -91,7 +91,7 @@ export class Combat {
 
     const origin = this.player.eyePosition(this.scratch).clone()
     const direction = this.player.lookDirection(this.scratchB).clone()
-    // Небольшой подъём: без него комок падает раньше, чем долетит до цели.
+    // A slight lift: without it the blob drops before reaching the target.
     const velocity = direction.multiplyScalar(PLAYER.throwSpeed)
     velocity.y += 3.5
 
@@ -101,7 +101,7 @@ export class Combat {
     return true
   }
 
-  /** Ударная волна: прыжок и выныривание босса зовут её с разной силой. */
+  /** Shockwave: the boss leap and emergence invoke it at different strengths. */
   slam(origin: THREE.Vector3, radius: number, damage: number = BOSS.slamDamage): void {
     this.waves.push(new Shockwave(origin.clone(), radius, damage))
     this.fx.shockwave(origin, radius, radius / BOSS.shockwaveSpeed)
@@ -119,7 +119,7 @@ export class Combat {
     this.scene.add(projectile.mesh)
   }
 
-  /** Ближайшая цель на луче для ЛКМ. Смурфиков и животных намеренно не задеть. */
+  /** Nearest ray target for LMB. Smurfs and animals are deliberately unhittable. */
   raycastEntities(
     origin: THREE.Vector3,
     direction: THREE.Vector3,
@@ -150,7 +150,7 @@ export class Combat {
     if (entity === this.boss) this.onBossHurt?.(amount)
   }
 
-  /** Контактный урон по игроку — рывок босса и укусы ночных врагов. */
+  /** Contact damage to the player — the boss dash and night-enemy bites. */
   touchPlayer(amount: number): void {
     this.hurtPlayer(amount)
   }
@@ -175,7 +175,7 @@ export class Combat {
       if (!projectile.spent && projectile.fromPlayer) {
         for (const entity of this.targets()) {
           const center = entity.center(this.scratch)
-          // Радиус попадания щедрый: в цель размером с дом должно быть легко попасть.
+          // A generous hit radius: a house-sized target should be easy to hit.
           const reach = projectile.radius + Math.max(entity.radius, entity.height * 0.4)
           const distance = distanceToSegment(
             center,
@@ -216,7 +216,7 @@ export class Combat {
         )
         if (Math.abs(distance - wave.radius) < WAVE_THICKNESS) {
           wave.hitPlayer = true
-          // Ключевое правило боя: волна цепляет только стоящего на земле.
+          // The key combat rule: the wave only catches a grounded player.
           if (this.player.onGround) {
             this.hurtPlayer(wave.damage)
           }
@@ -227,7 +227,7 @@ export class Combat {
     }
   }
 
-  /** Полностью сбрасывает бой — нужно при смерти и респавне игрока. */
+  /** Fully resets combat — needed on player death and respawn. */
   clear(): void {
     for (const projectile of this.projectiles) {
       this.scene.remove(projectile.mesh)

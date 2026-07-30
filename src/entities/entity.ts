@@ -3,15 +3,15 @@ import { isWater } from '../world/blocks'
 import type { CharacterModel } from '../render/models'
 import type { CollisionSource } from '../player/player'
 
-/** Гравитация существ. Чуть мягче игроцкой — так живность выглядит «пушистее». */
+/** Creature gravity. Slightly softer than the player's — critters look fluffier. */
 const GRAVITY = 22
 
 /**
- * База для смурфика и босса: коробка на земле, простая гравитация, здоровье и модель.
+ * Base for smurfs and the boss: a grounded box, simple gravity, health and a model.
  *
- * Физика здесь нарочно проще игроцкой: существа ходят по деревне и по открытому полю,
- * им не нужны ни точное скольжение по стенам, ни плавание. Зато есть шаг на блок вверх —
- * без него смурфик застревает на любой кочке.
+ * Physics here is deliberately simpler than the player's: creatures roam the village
+ * and open fields and need neither precise wall sliding nor swimming. They do get a
+ * one-block step-up — without it a smurf sticks on every bump.
  */
 export abstract class Entity {
   readonly position = new THREE.Vector3()
@@ -23,7 +23,7 @@ export abstract class Entity {
   constructor(
     readonly model: CharacterModel,
     readonly maxHealth: number,
-    /** Половина ширины коробки. */
+    /** Half of the box width. */
     readonly radius: number,
     readonly height: number,
   ) {
@@ -34,7 +34,7 @@ export abstract class Entity {
     return this.model.group
   }
 
-  /** Точка, по которой целятся и в которую летят снаряды. */
+  /** The point aimed at and flown to by projectiles. */
   center(target: THREE.Vector3): THREE.Vector3 {
     return target.set(this.position.x, this.position.y + this.height * 0.5, this.position.z)
   }
@@ -47,18 +47,18 @@ export abstract class Entity {
     return true
   }
 
-  /** Существо в воде (по середине тела). */
+  /** Whether the creature is in water (measured mid-body). */
   protected inWater = false
 
-  // --- Навигация без поиска пути: детектор застревания + обходной манёвр. ---
-  // Общий для всех существ: и смурфик у стены дома, и овца, упёршаяся в угол,
-  // лечатся одинаково — секунду не сдвинулся, значит сворачиваем вбок.
+  // --- Navigation without pathfinding: stuck detector + detour maneuver. ---
+  // Shared by all creatures: a smurf at a house wall and a sheep wedged into a
+  // corner are cured the same way — no movement for a second means swerve aside.
   private readonly navLastPosition = new THREE.Vector3(Number.NaN, 0, Number.NaN)
   private navCheckTimer = 1
   private detourTimer = 0
   private detourSign = 1
 
-  /** Зовётся каждый кадр, когда существо реально пытается куда-то идти. */
+  /** Called every frame while the creature is actually trying to walk somewhere. */
   protected updateNav(dt: number, targetDistance: number): void {
     this.detourTimer = Math.max(0, this.detourTimer - dt)
     this.navCheckTimer -= dt
@@ -78,7 +78,7 @@ export abstract class Entity {
     this.navLastPosition.copy(this.position)
   }
 
-  /** Поворачивает желаемое направление на ~75°, пока идёт обходной манёвр. */
+  /** Rotates the desired direction ~75° while a detour is active. */
   protected steer(dx: number, dz: number): readonly [number, number] {
     if (this.detourTimer <= 0) return [dx, dz]
     const angle = this.detourSign * 1.3
@@ -87,10 +87,10 @@ export abstract class Entity {
     return [dx * cos - dz * sin, dx * sin + dz * cos]
   }
 
-  /** Гравитация и опора. Возвращает true, если существо только что коснулось земли. */
+  /** Gravity and support. Returns true if the creature just touched the ground. */
   protected applyGravity(dt: number, world: CollisionSource): boolean {
-    // В воде существа всплывают и плывут поверху: смурфик, утонувший по дороге через
-    // озеро и застрявший у подводного склона, — ровно тот баг, ради которого это здесь.
+    // In water creatures float up and swim on top: a smurf drowning mid-lake and
+    // stuck at an underwater slope is exactly the bug this exists for.
     this.inWater = isWater(
       world.getVoxel(this.position.x, this.position.y + this.height * 0.5, this.position.z),
     )
@@ -119,7 +119,7 @@ export abstract class Entity {
     return false
   }
 
-  /** Верхняя граница ближайшего твёрдого блока под существом. */
+  /** Top of the nearest solid block beneath the creature. */
   private groundBelow(world: CollisionSource): number | null {
     const x = Math.floor(this.position.x)
     const z = Math.floor(this.position.z)
@@ -131,16 +131,16 @@ export abstract class Entity {
   }
 
   /**
-   * Горизонтальное перемещение из velocity, с шагом на один блок вверх — без него
-   * существо упирается в любую кочку и топчется на месте. Оси обрабатываются
-   * порознь, чтобы упор в стену давал скольжение вдоль неё.
+   * Horizontal movement from velocity, with a one-block step-up — without it a
+   * creature bumps into any mound and treads in place. Axes are handled separately
+   * so hitting a wall produces sliding along it.
    *
-   * Источник движения — именно velocity: от неё же зависит скорость анимации шага.
+   * Velocity is the movement source on purpose: stride animation speed reads it too.
    */
   protected stepMove(world: CollisionSource, dt: number): void {
-    // Анти-застревание: существо, оказавшееся внутри твёрдого блока (спавн в стволе
-    // дерева, осевший на него блок), мягко выталкивается вверх — иначе оно навсегда
-    // заблокировано и никакой обход не поможет.
+    // Anti-stuck: a creature ending up inside a solid block (spawned into a tree
+    // trunk, block settled on it) is gently pushed upward — otherwise it is locked
+    // forever and no detour can help.
     if (this.blockedAt(world, this.position.x, this.position.y, this.position.z)) {
       this.position.y += 4 * dt
       this.velocity.y = 0
@@ -162,7 +162,7 @@ export abstract class Entity {
       return false
     }
 
-    // Препятствие в один блок — переступаем. Из воды тоже: выход на берег это шаг вверх.
+    // A one-block obstacle — step over it. From water too: shoring up is a step-up.
     if ((this.onGround || this.inWater) && !this.blockedAt(world, nextX, this.position.y + 1, nextZ)) {
       this.position.x = nextX
       this.position.z = nextZ
@@ -173,7 +173,7 @@ export abstract class Entity {
     return true
   }
 
-  /** Пересекает ли коробка существа твёрдые блоки в указанной точке. */
+  /** Whether the creature's box overlaps solid blocks at the given point. */
   private blockedAt(world: CollisionSource, x: number, y: number, z: number): boolean {
     const top = y + this.height - 0.05
     for (let cy = Math.floor(y + 0.05); cy <= Math.floor(top); cy++) {
@@ -187,8 +187,8 @@ export abstract class Entity {
   }
 
   /**
-   * Расстояние до попадания луча в существо, или null. Форма — сфера: она прощает
-   * неточный прицел, что для боя от первого лица приятнее точной коробки.
+   * Ray hit distance to the creature, or null. The shape is a sphere: it forgives
+   * imprecise aim, which feels better in first-person combat than an exact box.
    */
   rayDistance(
     origin: THREE.Vector3,
@@ -214,17 +214,17 @@ export abstract class Entity {
     return hit <= maxDistance ? hit : null
   }
 
-  /** Разворачивает модель в сторону движения или цели. */
+  /** Turns the model toward its movement or target. */
   protected faceTowards(x: number, z: number, dt: number, speed = 9): void {
     const desired = Math.atan2(-(x - this.position.x), -(z - this.position.z))
     const current = this.group.rotation.y
-    // Кратчайший поворот, иначе модель разворачивается «через весь круг».
+    // Shortest-arc turn, or the model spins the long way around.
     let delta = ((desired - current + Math.PI) % (Math.PI * 2)) - Math.PI
     if (delta < -Math.PI) delta += Math.PI * 2
     this.group.rotation.y = current + delta * Math.min(1, speed * dt)
   }
 
-  /** Синхронизирует меш с позицией и крутит анимацию. */
+  /** Syncs the mesh with the position and drives the animation. */
   protected syncModel(elapsed: number, dt: number): void {
     this.group.position.copy(this.position)
     const speed = Math.hypot(this.velocity.x, this.velocity.z)

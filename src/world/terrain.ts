@@ -5,7 +5,7 @@ import { Chunk } from './chunk'
 
 const { chunkSizeX, chunkSizeY, chunkSizeZ, seaLevel } = WORLD
 
-/** Детерминированный PRNG, чтобы один и тот же сид всегда давал один и тот же мир. */
+/** Deterministic PRNG so the same seed always yields the same world. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -17,7 +17,7 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-/** Детерминированный хеш столбца — для деревьев и кустов без хранения состояния. */
+/** Deterministic column hash — trees and bushes without stored state. */
 function hash2(x: number, z: number, salt: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(z, 668265263) ^ Math.imul(salt, 2246822519)
   h = Math.imul(h ^ (h >>> 13), 1274126177)
@@ -29,7 +29,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t)
 }
 
-/** Максимальный вылет кроны за пределы столбца — на столько расширяем зону обхода. */
+/** Maximum crown overhang beyond a column — the scan area is widened by this much. */
 const TREE_REACH = 3
 
 export class TerrainGenerator {
@@ -44,7 +44,7 @@ export class TerrainGenerator {
     this.detail = createNoise2D(rng)
   }
 
-  /** Высота верхнего твёрдого блока в столбце. */
+  /** Height of the topmost solid block in a column. */
   surfaceHeight(x: number, z: number): number {
     let h =
       seaLevel +
@@ -53,8 +53,8 @@ export class TerrainGenerator {
       this.rough(x * 0.03, z * 0.03) * 4 +
       this.detail(x * 0.09, z * 0.09) * 1.5
 
-    // Площадку вокруг спавна выравниваем и поднимаем над водой: вся деревня строится
-    // именно здесь, и стартовать в океане или на отвесном склоне — плохой первый кадр.
+    // Flatten and raise the spawn area above water: the whole village gets built
+    // right here, and starting in the ocean or on a cliff is a bad first frame.
     const distance = Math.hypot(x, z)
     const blend = smoothstep(16, 48, distance)
     h = (seaLevel + 4) * (1 - blend) + h * blend
@@ -62,7 +62,7 @@ export class TerrainGenerator {
     return Math.max(1, Math.min(chunkSizeY - 10, Math.round(h)))
   }
 
-  /** Заполняет чанк рельефом, водой и растительностью. */
+  /** Fills a chunk with terrain, water and vegetation. */
   generate(chunk: Chunk): void {
     const originX = chunk.cx * chunkSizeX
     const originZ = chunk.cz * chunkSizeZ
@@ -93,8 +93,9 @@ export class TerrainGenerator {
   }
 
   /**
-   * Деревья и кустики. Обходим область шире чанка, чтобы дерево, выросшее у соседа,
-   * дотягивалось кроной в этот чанк — иначе на границах чанков кроны обрубались бы.
+   * Trees and bushes. We scan an area wider than the chunk so a tree grown in a
+   * neighbor reaches into this chunk with its crown — otherwise crowns would get
+   * clipped at chunk borders.
    */
   private decorate(chunk: Chunk): void {
     const originX = chunk.cx * chunkSizeX
@@ -107,8 +108,7 @@ export class TerrainGenerator {
         const h = this.surfaceHeight(wx, wz)
         if (h <= seaLevel + 1) continue
 
-        // Рядом со спавном деревья не ставим — площадка должна остаться свободной
-        // под стройку деревни.
+        // No trees near spawn — the area must stay clear for village building.
         if (Math.hypot(wx, wz) < 14) continue
 
         if (hash2(wx, wz, 7) < 0.014) {
@@ -116,8 +116,8 @@ export class TerrainGenerator {
         } else if (hash2(wx, wz, 23) < 0.01) {
           this.setWorld(chunk, wx, h + 1, wz, Block.Blossom)
         } else if (hash2(Math.floor(wx / 3), Math.floor(wz / 3), 67) < 0.045 && hash2(wx, wz, 71) < 0.65) {
-          // Морковные грядки кустятся пятнами 3×3 (хеш по ячейке), а не поодиночке:
-          // одну грядку в поле не найти, а пятно видно издалека.
+          // Carrot patches cluster in 3×3 spots (cell hash) rather than singles:
+          // one lone patch is unfindable, a spot reads from afar.
           this.setWorld(chunk, wx, h + 1, wz, Block.CarrotPlant)
         }
       }
@@ -135,7 +135,7 @@ export class TerrainGenerator {
     const crownY = baseY + trunkHeight
     const leaf = blossomTree ? Block.Blossom : Block.Leaves
 
-    // Крона — сглаженный блоб: срезаем углы, иначе получается куб на палке.
+    // The crown is a smoothed blob: corners get cut, or it looks like a cube on a stick.
     for (let dy = -1; dy <= 2; dy++) {
       const radius = dy === 2 ? 1 : dy === -1 ? 2 : 2
       for (let dz = -radius; dz <= radius; dz++) {
@@ -149,8 +149,8 @@ export class TerrainGenerator {
   }
 
   /**
-   * Пишет блок в мировых координатах, молча игнорируя всё за пределами этого чанка.
-   * Так одна и та же процедура постройки дерева работает из любого соседнего чанка.
+   * Writes a block in world coordinates, silently ignoring anything outside this
+   * chunk. This lets one tree-building routine work from any neighboring chunk.
    */
   private setWorld(
     chunk: Chunk,

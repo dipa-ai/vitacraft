@@ -3,7 +3,7 @@ import { PLAYER } from '../config/tuning'
 import { Block, isSolid } from '../world/blocks'
 import { Player, playerOverlapsBlock, type CollisionSource, type MoveInput } from './player'
 
-/** Крошечный мир из перечисленных блоков плюс бесконечный пол на y=0. */
+/** Tiny world of listed blocks plus an infinite floor at y=0. */
 function worldOf(cells: Record<string, Block>, floorY = 0): CollisionSource {
   const get = (x: number, y: number, z: number): Block => {
     if (y === floorY) return Block.Stone
@@ -21,7 +21,7 @@ function input(partial: Partial<MoveInput>): MoveInput {
   return { ...idle, ...partial }
 }
 
-/** Прогоняет фиксированные шаги — так тест не зависит от реального времени. */
+/** Runs fixed steps so the test does not depend on wall-clock time. */
 function simulate(
   player: Player,
   world: CollisionSource,
@@ -33,21 +33,21 @@ function simulate(
   for (let i = 0; i < steps; i++) player.update(dt, moveInput, world)
 }
 
-describe('физика игрока', () => {
-  it('падает под гравитацией и встаёт на пол', () => {
+describe('player physics', () => {
+  it('falls under gravity and lands on the floor', () => {
     const world = worldOf({})
     const player = new Player()
     player.respawn(0.5, 10, 0.5)
 
     simulate(player, world, idle, 2)
 
-    // Пол занимает y=0, значит ступни оказываются на y=1.
+    // The floor occupies y=0, so the feet end up at y=1.
     expect(player.position.y).toBeCloseTo(1, 5)
     expect(player.onGround).toBe(true)
     expect(player.velocity.y).toBe(0)
   })
 
-  it('идёт вперёд по -Z при yaw = 0', () => {
+  it('walks forward along -Z at yaw = 0', () => {
     const world = worldOf({})
     const player = new Player()
     player.respawn(0.5, 1, 0.5)
@@ -58,11 +58,11 @@ describe('физика игрока', () => {
     expect(player.position.x).toBeCloseTo(0.5, 5)
   })
 
-  it('поворот на 90° разворачивает направление хода', () => {
+  it('a 90° turn redirects movement', () => {
     const world = worldOf({})
     const player = new Player()
     player.respawn(0.5, 1, 0.5)
-    // Положительный yaw поворачивает влево, значит «вперёд» уходит в -X.
+    // Positive yaw turns left, so forward heads toward -X.
     player.yaw = Math.PI / 2
 
     simulate(player, world, input({ forward: 1 }), 1)
@@ -71,7 +71,7 @@ describe('физика игрока', () => {
     expect(player.position.z).toBeCloseTo(0.5, 5)
   })
 
-  it('бег быстрее шага', () => {
+  it('running is faster than walking', () => {
     const world = worldOf({})
     const walker = new Player()
     walker.respawn(0.5, 1, 0.5)
@@ -84,8 +84,8 @@ describe('физика игрока', () => {
     expect(Math.abs(runner.position.z)).toBeGreaterThan(Math.abs(walker.position.z))
   })
 
-  it('не проходит сквозь стену', () => {
-    // Стена из двух блоков в высоту перед игроком, поперёк его пути.
+  it('does not pass through a wall', () => {
+    // A two-block-tall wall in front of the player, across the path.
     const cells: Record<string, Block> = {}
     for (let x = -3; x <= 3; x++) {
       for (let y = 1; y <= 3; y++) {
@@ -98,13 +98,13 @@ describe('физика игрока', () => {
 
     simulate(player, world, input({ forward: 1, run: true }), 3)
 
-    // Упор в грань стены z=-3 с учётом полутолщины игрока.
+    // Stopped at the wall face z=-3, accounting for the player half-width.
     expect(player.position.z).toBeGreaterThan(-3)
     expect(player.position.z).toBeCloseTo(-3 + PLAYER.width / 2, 2)
   })
 
-  it('скользит вдоль стены, а не застревает в углу', () => {
-    // Стена вдоль X: движение по -Z блокируется, по -X должно остаться свободным.
+  it('slides along a wall instead of sticking in a corner', () => {
+    // A wall along X: -Z movement is blocked, -X must remain free.
     const cells: Record<string, Block> = {}
     for (let x = -20; x <= 20; x++) {
       for (let y = 1; y <= 3; y++) {
@@ -114,15 +114,15 @@ describe('физика игрока', () => {
     const world = worldOf(cells)
     const player = new Player()
     player.respawn(0.5, 1, 0.5)
-    // Идём вперёд и влево одновременно, упираясь в стену.
+    // Walk forward and left at once, pressing into the wall.
     simulate(player, world, input({ forward: 1, right: -1 }), 2)
 
     expect(player.position.z).toBeGreaterThan(-3)
-    // Несмотря на упор, вдоль стены игрок уехал заметно далеко.
+    // Despite the stop, the player slid a good distance along the wall.
     expect(player.position.x).toBeLessThan(-2)
   })
 
-  it('прыгает и возвращается на ту же высоту', () => {
+  it('jumps and returns to the same height', () => {
     const world = worldOf({})
     const player = new Player()
     player.respawn(0.5, 1, 0.5)
@@ -136,7 +136,7 @@ describe('физика игрока', () => {
     expect(player.onGround).toBe(true)
   })
 
-  it('в прыжке упирается головой в потолок', () => {
+  it('bumps its head on the ceiling mid-jump', () => {
     const cells: Record<string, Block> = {}
     for (let x = -2; x <= 2; x++) {
       for (let z = -2; z <= 2; z++) {
@@ -149,22 +149,22 @@ describe('физика игрока', () => {
     simulate(player, world, idle, 0.2)
     simulate(player, world, input({ jump: true }), 0.5)
 
-    // Макушка не должна пробить блок на y=4.
+    // The head must not punch through the block at y=4.
     expect(player.position.y + PLAYER.height).toBeLessThanOrEqual(4)
   })
 
-  it('не проваливается сквозь пол даже при огромном шаге времени', () => {
+  it('does not fall through the floor even with a huge timestep', () => {
     const world = worldOf({})
     const player = new Player()
     player.respawn(0.5, 40, 0.5)
 
-    // Один чудовищный кадр: без подшагов игрок пролетел бы пол насквозь.
+    // One monstrous frame: without substeps the player would fly through the floor.
     for (let i = 0; i < 10; i++) player.update(0.5, idle, world)
 
     expect(player.position.y).toBeCloseTo(1, 5)
   })
 
-  it('в воде падает медленнее, чем в воздухе', () => {
+  it('falls slower in water than in air', () => {
     const water: Record<string, Block> = {}
     for (let y = 1; y <= 20; y++) water[`0,${y},0`] = Block.Water
     const inWater = new Player()
@@ -179,13 +179,13 @@ describe('физика игрока', () => {
     expect(inWater.inWater).toBe(true)
   })
 
-  it('неуязвимость глотает второй удар подряд', () => {
+  it('invulnerability swallows a second consecutive hit', () => {
     const player = new Player()
     player.respawn(0, 1, 0)
 
     expect(player.takeDamage(2)).toBe(true)
     expect(player.health).toBe(PLAYER.maxHealth - 2)
-    // Сразу же второй удар не должен пройти.
+    // An immediate second hit must not land.
     expect(player.takeDamage(2)).toBe(false)
     expect(player.health).toBe(PLAYER.maxHealth - 2)
 
@@ -193,7 +193,7 @@ describe('физика игрока', () => {
     expect(player.takeDamage(2)).toBe(true)
   })
 
-  it('умирает при нулевом здоровье', () => {
+  it('dies at zero health', () => {
     const player = new Player()
     player.respawn(0, 1, 0)
     player.takeDamage(PLAYER.maxHealth)
@@ -203,18 +203,18 @@ describe('физика игрока', () => {
 })
 
 describe('playerOverlapsBlock', () => {
-  it('находит блок, попадающий внутрь коробки игрока', () => {
+  it('detects a block inside the player box', () => {
     const position = { x: 0.5, y: 10, z: 0.5 } as never
-    // Блок ровно под ногами игрока и на уровне его тела.
+    // A block right under the feet and one at body level.
     expect(playerOverlapsBlock(position, 0, 10, 0)).toBe(true)
     expect(playerOverlapsBlock(position, 0, 11, 0)).toBe(true)
   })
 
-  it('не считает пересечением блок под ногами или в стороне', () => {
+  it('does not count a block underfoot or to the side as overlap', () => {
     const position = { x: 0.5, y: 10, z: 0.5 } as never
     expect(playerOverlapsBlock(position, 0, 9, 0)).toBe(false)
     expect(playerOverlapsBlock(position, 3, 10, 0)).toBe(false)
-    // Игрок высотой 1.8 не достаёт до блока на y=12.
+    // A 1.8-tall player cannot reach the block at y=12.
     expect(playerOverlapsBlock(position, 0, 12, 0)).toBe(false)
   })
 })

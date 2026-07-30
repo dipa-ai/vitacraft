@@ -2,24 +2,24 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { CollisionSource } from '../player/player'
 
-/** Гравитация снарядов: заметно слабее игроцкой, чтобы дуга полёта была читаемой. */
+/** Projectile gravity: much weaker than the player's, keeping the arc readable. */
 const PROJECTILE_GRAVITY = 14
 
 /**
- * Летящий комок. Один класс обслуживает и метательное игрока (клавиша F), и плевки
- * босса — различаются только цветом, уроном и владельцем.
+ * A flying blob. One class serves both the player's throwable (F key) and boss
+ * projectiles — they differ only in color, damage and owner.
  */
 export class Projectile {
   readonly position = new THREE.Vector3()
   /**
-   * Позиция на прошлом кадре. Столкновения проверяются по отрезку между кадрами:
-   * на скорости 22 блока в секунду снаряд смещается за кадр почти на треть блока и,
-   * если сверять только конечные точки, пролетает мимо цели сквозь неё.
+   * Last frame's position. Collisions are checked along the inter-frame segment:
+   * at 22 blocks per second a projectile moves nearly a third of a block per frame,
+   * and endpoint-only checks would fly straight through the target.
    */
   readonly previousPosition = new THREE.Vector3()
   readonly velocity = new THREE.Vector3()
   readonly mesh: THREE.Mesh
-  /** Снаряд израсходован и его надо убрать со сцены. */
+  /** The projectile is spent and should be removed from the scene. */
   spent = false
 
   private life: number
@@ -29,7 +29,7 @@ export class Projectile {
     velocity: THREE.Vector3,
     readonly damage: number,
     color: number,
-    /** Снаряды игрока бьют босса, снаряды босса — игрока. */
+    /** Player projectiles hit the boss; boss projectiles hit the player. */
     readonly fromPlayer: boolean,
     readonly radius = 0.4,
     lifetime = 5,
@@ -41,15 +41,16 @@ export class Projectile {
 
     this.mesh = new THREE.Mesh(
       new RoundedBoxGeometry(radius * 2, radius * 2, radius * 2, 2, radius * 0.5),
-      // emissiveIntensity выше единицы намеренно: только так снаряд перешагивает порог
-      // блума и начинает светиться, а не просто выглядит ярче. Значение согласовано
-      // с порогом в scene.ts — комок должен светиться, всё остальное нет.
+      // emissiveIntensity above 1 on purpose: only then the projectile crosses the
+      // bloom threshold and actually glows instead of just looking brighter. The
+      // value is matched to the threshold in scene.ts — the blob should glow,
+      // nothing else should.
       new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 3.2 }),
     )
     this.mesh.position.copy(origin)
   }
 
-  /** @returns true, если снаряд врезался в блок. */
+  /** @returns true if the projectile hit a block. */
   update(dt: number, world: CollisionSource): boolean {
     this.life -= dt
     if (this.life <= 0) {

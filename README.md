@@ -1,99 +1,103 @@
 # VitaCraft
 
-Мягкая воксельная игра в браузере: строишь деревню для смурфиков, приводишь зверюшек,
-копаешь пруд, переживаешь ночи с тёмными зверюшками — а потом побеждаешь большого
-рыжего кролика Витруляна. Ни одного внешнего ассета: вся графика и весь звук
-генерируются кодом.
+A soft voxel game in the browser: build a village for smurfs, bring animals home,
+dig a pond, survive nights with dark creatures — then defeat Vitruylan, the big
+ginger rabbit. No external assets: all graphics and sound are generated in code.
 
-## Запуск
+## Run
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173
 ```
 
-Другие команды:
+Other commands:
 
 ```bash
-npm run build      # прод-сборка в dist/
+npm run build      # production bundle in dist/
 npm run typecheck  # tsc --noEmit
-npm test           # юнит-тесты (vitest)
+npm test           # unit tests (vitest)
 ```
 
-## Управление
+## Controls
 
-| Клавиша | Действие |
+| Key | Action |
 |---|---|
-| `WASD` | идти, `Shift` — бежать |
-| `Space` | прыжок (и всплывать в воде) |
-| `ЛКМ` | ломать блок или ударить; с водой в руке — зачерпнуть воду |
-| `ПКМ` | поставить блок; по двери — открыть/закрыть |
-| `F` | метнуть облачко (заряды выпадают из ночных зверюшек) |
-| `1`–`9`, колесо | выбрать блок; колесо крутит все слоты |
-| `Tab` | панель ресурсов: что это и где взять |
-| `F5` или `V` | сменить вид: от первого лица ↔ от третьего |
-| `Esc` | пауза |
+| `WASD` | walk, `Shift` — sprint |
+| `Space` | jump (and swim up in water) |
+| LMB | break a block or hit; with water in hand — scoop water |
+| RMB | place a block; on a door — open/close |
+| `F` | throw a cloud (charges drop from night creatures) |
+| `1`–`9`, mouse wheel | select a block; wheel cycles all slots |
+| `Tab` | resources panel: what it is and where to get it |
+| `Q` | show or hide the controls help |
+| `F5` or `V` | toggle view: first person ↔ third person |
+| `Esc` | pause |
 
-## Как проходить
+## How to play
 
-Задания выдаёт **старейшина** — первый заселившийся смурфик в красном колпачке:
+Quests come from the **elder** — the first settled smurf in a red hat:
 
-1. **Деревня.** Дом — это грибная кроватка (два блока) в герметичной комнате. Стекло
-   считается стеной (окна можно), **дверца тоже** — и открытая, и закрытая: ставь дверь
-   и смурфики будут заходить внутрь. Сломал стену — житель уйдёт; заделал — вернётся
-   новый. Нужно 5 домов.
-2. **Зверинец.** Возьми морковку в руку (добывается на грядках) — ближайшие зверюшки
-   пойдут следом. Приведи трёх в деревню.
-3. **Пруд.** Выкопай яму рядом с деревней и налей воды из ведра. Вода течёт и
-   заполняет ямы сама; зачерпнуть можно из любого водоёма.
-4. **Ночь.** С темнотой лезут тёмные зверюшки. В закрытом доме безопасно: они не
-   проходят сквозь стены и закрытые двери. Смурфики прячутся сами. Переживи ночь.
-5. **Облачка.** Из убитых ночных зверюшек выпадают облачка — набери 10. Это заряды
-   для метательного (`F`).
+1. **Village.** A house is a mushroom bed (two blocks) in a sealed room. Glass
+   counts as a wall (windows are fine), and so does a **door** — open or closed:
+   place a door so smurfs can walk inside. Break a wall and the resident leaves;
+   seal it again and a new one arrives. You need 5 houses.
+2. **Menagerie.** Hold a carrot (from carrot patches) — nearby animals follow.
+   Lead three into the village.
+3. **Pond.** Dig a hole near the village and pour water from a bucket. Water
+   flows and fills pits on its own; scoop from any body of water.
+4. **Night.** With darkness come dark creatures. Inside a sealed house you are
+   safe: they do not pass through walls or closed doors. Smurfs hide on their
+   own. Survive the night.
+5. **Clouds.** Night creatures drop clouds — collect 10. These are charges for
+   the throwable (`F`).
 
-После этого приходит **Витрулян** — гигантский рыжий кролик. Атаки честные, у каждой
-есть телеграф: перед **прыжком** приседает и прижимает уши (волна от приземления бьёт
-только стоящего на земле — уклоняйся прыжком), перед **рывком** наклоняется, перед
-**подкопом** роет землю — дрожь ползёт к месту выныривания. Постройки он не разрушает.
+After that **Vitruylan** arrives — a giant ginger rabbit. Attacks are fair; each
+has a telegraph: before a **leap** he crouches and pins his ears (the landing
+shockwave only hits you on the ground — dodge by jumping), before a **dash** he
+leans forward, before a **burrow** he digs — tremor crawls toward the emerge
+spot. He does not destroy buildings.
 
-Здоровье восстанавливается само, если несколько секунд не получать урон. Прогресс
-сохраняется в localStorage автоматически; на стартовом экране есть «Начать заново».
+Health regenerates on its own after a few seconds without damage. Progress is
+saved to localStorage automatically; the start screen has “Начать заново”
+(Start over).
 
-## Устройство кода
+## Code layout
 
 ```
 src/
-├── config/        палитра и все игровые числа — править внешний вид и баланс здесь
-├── world/         блоки, чанки, мешер, терраген, вода, воксельный рейкаст
-├── player/        физика, ввод, ломание/установка блоков, парные блоки, ведро
-├── entities/      база сущностей, смурфик, животные, ночные зверюшки, босс, снаряды
-├── game/          валидатор домов, цепочка квестов, фауна, ночь, боевая система
-├── render/        сцена и свет, модели существ, двери, частицы, звук
-└── ui/            HUD, панель ресурсов и полноэкранные карточки
+├── config/        palette and gameplay numbers — tweak look and balance here
+├── world/         blocks, chunks, mesher, terrain, water, voxel raycast
+├── player/        physics, input, break/place, paired blocks, bucket
+├── entities/      entity base, smurf, animals, night creatures, boss, projectiles
+├── game/          house validator, quest chain, fauna, night, combat
+├── render/        scene and light, creature models, doors, particles, audio
+└── ui/            HUD, resources panel, and full-screen cards
 ```
 
-Решения, на которых держится игра:
+Design decisions the game rests on:
 
-1. **Vertex AO вместо текстур.** Мешер пишет цвет и запечённое затенение в атрибут
-   вершин. Природные блоки получают разброс яркости на воксель, блоки для стройки —
-   почти нет.
-2. **Дом = flood-fill от кроватки с лимитом**, и правило «стены» расщеплено на два
-   предиката: `isSolid` (физика) и `sealsRoom` (герметичность). Закрытая дверь
-   непроходима, открытая проходима — но комнату запечатывают обе. Именно это позволяет
-   домам иметь двери, а смурфикам — заходить внутрь.
-3. **Вода с уровнями (4…1).** Вниз течёт без потери уровня, вбок — с потерей, поэтому
-   пруд ограничивает себя сам. Вода не пишется в сохранение: после загрузки она стечёт
-   заново из источников.
-4. **«Ночью в доме безопасно» обеспечивается физикой**, а не проверкой «игрок внутри»:
-   враг просто не проходит сквозь стены и закрытую дверь. Блоки враги не ломают.
-5. **Спавн существ по рельефу** (`groundY` из чистой математики террагена), а не по
-   верхнему твёрдому блоку: иначе смурфики появлялись на кронах деревьев и падали.
-   Вне прогруженных чанков пришельцы идут по рельефу кинематически.
-6. **Скруглённые формы только у существ.** Блоки мира — острые кубы; смурфики, звери,
-   ночные зверюшки и кролик собраны из `RoundedBoxGeometry`.
+1. **Vertex AO instead of textures.** The mesher writes color and baked shading
+   into vertex attributes. Natural blocks get per-voxel brightness variation;
+   build blocks almost none.
+2. **House = flood-fill from a bed with a limit**, and the “wall” rule is split
+   into two predicates: `isSolid` (physics) and `sealsRoom` (airtightness). A
+   closed door is impassable, an open door is passable — but both seal the room.
+   That is what lets houses have doors and smurfs walk inside.
+3. **Leveled water (4…1).** Flows down without losing level, sideways with a
+   loss, so a pond bounds itself. Water is not written to the save: after load
+   it reflows from sources.
+4. **“Safe indoors at night” is physics**, not an “player is inside” check:
+   enemies simply do not pass through walls or closed doors. Enemies do not
+   break blocks.
+5. **Creature spawn from terrain height** (`groundY` from pure terrain math),
+   not the top solid block: otherwise smurfs spawned on treetops and fell. Outside
+   loaded chunks, arrivals walk the terrain kinematically.
+6. **Rounded shapes only on creatures.** World blocks are sharp cubes; smurfs,
+   animals, night creatures, and the rabbit are built from `RoundedBoxGeometry`.
 
-Мир не сохраняется целиком: он детерминированно восстанавливается из сида, в
-localStorage идёт только дифф изменённых игроком блоков плюс прогресс цепочки.
+The world is not saved whole: it is deterministically rebuilt from a seed;
+localStorage only stores a diff of player-changed blocks plus quest progress.
 
-Основа воксельной части (мешер с отсечением граней, DDA-рейкаст) взята из официального
-мануала Three.js и доработана под vertex colors.
+The voxel core (face-culling mesher, DDA raycast) is based on the official
+Three.js manual and adapted for vertex colors.

@@ -3,14 +3,14 @@ import { AO_LEVELS } from '../config/palette'
 import { Block } from './blocks'
 import { meshChunk, type VoxelReader } from './mesher'
 
-/** Читалка по набору занятых координат — удобно описывать крошечные сцены. */
+/** Reader over a set of occupied coordinates — handy for tiny scenes. */
 function readerOf(cells: Record<string, Block>): VoxelReader {
   return (x, y, z) => cells[`${x},${y},${z}`] ?? Block.Air
 }
 
 /**
- * Минимальная яркость среди вершин одной ориентации. Сравнивать грани разных
- * направлений нельзя: у них разный FACE_TINT, и он замаскирует эффект AO.
+ * Minimum brightness among vertices of one orientation. Faces of different
+ * directions must not be compared: their FACE_TINT differs and would mask AO.
  */
 function minBrightnessOfFace(
   colors: Float32Array,
@@ -28,7 +28,7 @@ function minBrightnessOfFace(
 }
 
 describe('meshChunk', () => {
-  it('одиночный блок даёт 6 граней: 24 вершины и 36 индексов', () => {
+  it('a lone block yields 6 faces: 24 vertices and 36 indices', () => {
     const result = meshChunk(0, 0, readerOf({ '3,10,4': Block.Stone }))
     expect(result.opaque).not.toBeNull()
     expect(result.opaque!.positions.length / 3).toBe(24)
@@ -36,23 +36,23 @@ describe('meshChunk', () => {
     expect(result.transparent).toBeNull()
   })
 
-  it('пустой чанк не даёт геометрии вообще', () => {
+  it('an empty chunk yields no geometry at all', () => {
     const result = meshChunk(0, 0, readerOf({}))
     expect(result.opaque).toBeNull()
     expect(result.transparent).toBeNull()
   })
 
-  it('гасит грань между двумя соседними непрозрачными блоками', () => {
+  it('culls the face between two adjacent opaque blocks', () => {
     const two = meshChunk(
       0,
       0,
       readerOf({ '3,10,4': Block.Stone, '4,10,4': Block.Stone }),
     )
-    // 12 граней минус две соприкасающиеся = 10 граней по 6 индексов.
+    // 12 faces minus the two touching ones = 10 faces of 6 indices each.
     expect(two.opaque!.indices.length).toBe(10 * 6)
   })
 
-  it('раскладывает воду и стекло в прозрачный проход, а землю — в непрозрачный', () => {
+  it('routes water and glass into the transparent pass, dirt into the opaque one', () => {
     const result = meshChunk(
       0,
       0,
@@ -62,7 +62,7 @@ describe('meshChunk', () => {
     expect(result.transparent!.positions.length / 3).toBe(48)
   })
 
-  it('гасит внутренние грани между двумя блоками воды', () => {
+  it('culls interior faces between two water blocks', () => {
     const result = meshChunk(
       0,
       0,
@@ -71,12 +71,12 @@ describe('meshChunk', () => {
     expect(result.transparent!.indices.length).toBe(10 * 6)
   })
 
-  it('затеняет верхнюю грань там, где рядом стоит стенка выше', () => {
-    // Одинокий блок: затенять нечем, верхняя грань ровная.
+  it('darkens the top face where a taller wall stands nearby', () => {
+    // A lone block: nothing to occlude it, the top face is uniform.
     const lone = meshChunk(0, 0, readerOf({ '3,10,4': Block.Stone }))
     const loneTop = minBrightnessOfFace(lone.opaque!.colors, lone.opaque!.normals, 0, 1, 0)
 
-    // Тот же блок, но рядом стенка на блок выше — угол верхней грани должен потемнеть.
+    // Same block with a one-higher wall nearby — the top-face corner must darken.
     const shaded = meshChunk(
       0,
       0,
@@ -96,8 +96,8 @@ describe('meshChunk', () => {
     expect(shadedTop).toBeLessThan(loneTop * 0.95)
   })
 
-  it('во внутреннем углу использует самый тёмный уровень AO', () => {
-    // Блок в углу колодца: два бока и угол перекрыты — это уровень AO 0.
+  it('uses the darkest AO level in an inner corner', () => {
+    // A block in a well corner: both sides and the corner occluded — AO level 0.
     const result = meshChunk(
       0,
       0,
@@ -116,11 +116,11 @@ describe('meshChunk', () => {
       darkest = Math.min(darkest, sum)
       brightest = Math.max(brightest, sum)
     }
-    // Отношение тёмного к светлому должно дотягиваться до нижнего уровня AO.
+    // The dark-to-bright ratio must reach down to the lowest AO level.
     expect(darkest / brightest).toBeLessThan(AO_LEVELS[1])
   })
 
-  it('пишет RGBA: у непрозрачных блоков альфа 1, у воды — её прозрачность', () => {
+  it('writes RGBA: opaque blocks get alpha 1, water gets its opacity', () => {
     const result = meshChunk(
       0,
       0,
@@ -137,20 +137,20 @@ describe('meshChunk', () => {
     }
   })
 
-  it('опускает поверхность воды, если сверху воздух', () => {
+  it('lowers the water surface when air is above', () => {
     const result = meshChunk(0, 0, readerOf({ '3,10,4': Block.Water }))
     const positions = result.transparent!.positions
     let maxY = -Infinity
     for (let i = 1; i < positions.length; i += 3) {
       maxY = Math.max(maxY, positions[i])
     }
-    // Верх воды ниже целого блока — так видно, что это поверхность, а не куб.
+    // Water top sits below a full block — visibly a surface, not a cube.
     expect(maxY).toBeLessThan(11)
     expect(maxY).toBeGreaterThan(10.5)
   })
 
-  it('координаты вершин локальны для чанка, а не мировые', () => {
-    // Тот же блок в чанке (2,3) должен дать те же локальные позиции.
+  it('vertex coordinates are chunk-local, not world', () => {
+    // The same block in chunk (2,3) must yield the same local positions.
     const result = meshChunk(2, 3, readerOf({ '35,10,52': Block.Stone }))
     const positions = result.opaque!.positions
     let maxX = -Infinity
